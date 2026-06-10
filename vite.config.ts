@@ -11,7 +11,7 @@ const config = defineConfig({
   resolve: { tsconfigPaths: true },
   plugins: [
     devtools(),
-    nitro({ rollupConfig: { external: [/^@sentry\//] }, preset: 'netlify' }),
+    nitro({ rollupConfig: { external: [/^@sentry\//] }, preset: 'vercel' }),
     tailwindcss(),
     tanstackStart(),
     viteReact(),
