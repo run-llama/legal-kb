@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String         @id
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  projects      Project[]
+  files         File[]
+  apiKeys       ApiKey?
+  messages      Message[]
+  conversations Conversation[]
+
+  @@map("users")
+}
+
+model Project {
+  id            String         @id @default(uuid())
+  name          String
+  description   String?
+  userId        String         @map("user_id")
+  indexId       String         @map("index_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files         ProjectFile[]
+  messages      Message[]
+  conversations Conversation[]
+
+  @@unique([userId, name])
+  @@map("projects")
+}
+
+model File {
+  id        String        @id @default(uuid())
+  name      String
+  size      Int
+  mimeType  String        @map("mime_type")
+  userId    String        @map("user_id")
+  createdAt DateTime      @default(now()) @map("created_at")
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects  ProjectFile[]
+
+  @@map("files")
+}
+
+model ProjectFile {
+  projectId String  @map("project_id")
+  fileId    String  @map("file_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  file      File    @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([projectId, fileId])
+  @@map("project_files")
+}
+
+model ApiKey {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @map("user_id")
+  // Stored as "iv:encryptedData" (base64)
+  openaiKey           String?  @map("openai_key")
+  anthropicKey        String?  @map("anthropic_key")
+  llamacloudKey       String?  @map("llamacloud_key")
+  llamacloudProjectId String?  @map("llamacloud_project_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Conversation {
+  id        String    @id @default(uuid())
+  title     String?
+  projectId String    @map("project_id")
+  userId    String    @map("user_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([projectId, createdAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String       @map("conversation_id")
+  role           String // "user" | "assistant" | "tool"
+  content        Json // full UIMessage as-is
+  createdAt      DateTime     @default(now()) @map("created_at")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id])
+  userId         String?
+  project        Project?     @relation(fields: [projectId], references: [id])
+  projectId      String?
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
