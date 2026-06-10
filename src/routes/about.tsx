@@ -37,10 +37,9 @@ function About() {
               Projects ↔ Indexes
             </h2>
             <p className="m-0 text-sm leading-7 text-[var(--sea-ink-soft)]">
-              Each project you create in legal-kb is mirrored 1:1 by an Index
-              v2 in your LlamaCloud account. Delete a project here, the index
-              goes away there. Add files here, they're parsed and ingested
-              there.
+              Each project you create in legal-kb is mirrored 1:1 by an Index v2
+              in your LlamaCloud account. Delete a project here, the index goes
+              away there. Add files here, they're parsed and ingested there.
             </p>
           </div>
           <div>
@@ -61,8 +60,9 @@ function About() {
               Once your project has files, you can chat with an agent that has
               real tools: <code>read</code> a specific document,{' '}
               <code>grep</code> for exact strings, <code>find</code> files by
-              name or metadata, and run <strong>index-wide hybrid search</strong>{' '}
-              (semantic + keyword) across everything in the project.
+              name or metadata, and run{' '}
+              <strong>index-wide hybrid search</strong> (semantic + keyword)
+              across everything in the project.
             </p>
           </div>
           <div>

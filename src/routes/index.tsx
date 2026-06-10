@@ -20,9 +20,9 @@ function App() {
         </h1>
         <p className="mb-8 max-w-2xl text-base text-[var(--sea-ink-soft)] sm:text-lg">
           legal-kb is a workspace for organizing legal documents into projects,
-          backed one-to-one by indexes on LlamaIndex's{' '}
-          <strong>Index v2</strong> — the knowledge base purpose-built for
-          agentic retrieval, available on the{' '}
+          backed one-to-one by indexes on LlamaIndex's <strong>Index v2</strong>{' '}
+          — the knowledge base purpose-built for agentic retrieval, available on
+          the{' '}
           <a
             href="https://cloud.llamaindex.ai"
             target="_blank"
