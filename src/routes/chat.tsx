@@ -303,7 +303,7 @@ function ChatAuthed({ userId }: { userId: string }) {
       : !credentials?.anthropicKey
 
   return (
-    <main className="page-wrap px-4 py-8 space-y-4 max-w-[1400px] mx-auto">
+    <main className="page-wrap flex flex-col px-4 pt-4 pb-0 gap-4 max-w-[1400px] mx-auto h-[calc(100vh-72px)]">
       {/* Header */}
       <section className="island-shell rounded-2xl p-5 sm:p-6">
         <p className="island-kicker mb-2">Chat</p>
@@ -402,7 +402,7 @@ function ChatAuthed({ userId }: { userId: string }) {
 
       {/* Conversation sidebar + chat panel. */}
       {projectId ? (
-        <section className="grid gap-4 md:grid-cols-[280px_1fr] items-stretch">
+        <section className="grid gap-4 md:grid-cols-[280px_1fr] items-stretch flex-1 min-h-0">
           <ConversationSidebar
             conversations={conversations}
             isLoading={conversationsQuery.isLoading}
@@ -481,7 +481,7 @@ function ConversationSidebar({
   onDelete: (c: ConversationSummary) => void
 }) {
   return (
-    <aside className="island-shell rounded-2xl p-3 flex flex-col gap-2 min-h-[70vh] max-h-[70vh]">
+    <aside className="island-shell rounded-2xl p-3 flex flex-col gap-2 h-full overflow-hidden">
       <div className="flex items-center justify-between px-2 pt-1">
         <p className="island-kicker m-0">Conversations</p>
         <button
@@ -662,7 +662,7 @@ function ChatPanelInner({
 
   const [input, setInput] = useState('')
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = (e: React.SubmitEvent) => {
     e.preventDefault()
     const text = input.trim()
     if (!text || !canSend) return
@@ -675,9 +675,9 @@ function ChatPanelInner({
   // become independent grid children and the composer wraps under the
   // sidebar in row 2.
   return (
-    <div className="flex flex-col gap-4 min-h-[70vh]">
-      <section className="island-shell rounded-2xl p-5 flex-1 min-h-[40vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-3 gap-2">
+    <div className="flex flex-col gap-4 h-full min-h-0">
+      <section className="island-shell rounded-2xl p-5 flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+        <div className="flex items-center justify-between gap-2">
           <p className="island-kicker m-0">
             {messages.length} message{messages.length === 1 ? '' : 's'}
           </p>
@@ -689,7 +689,7 @@ function ChatPanelInner({
             semantic retrieval, find/read files, and grep.
           </p>
         ) : (
-          <ul className="m-0 list-none p-0 grid gap-3">
+          <ul className="m-0 list-none p-0 grid gap-3 overflow-y-auto flex-1">
             {messages.map((m) => (
               <MessageBubble key={m.id} message={m} />
             ))}
@@ -726,6 +726,7 @@ function ChatPanelInner({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
+              // @ts-expect-error (ts 2345)
               onSubmit(e)
             }
           }}
