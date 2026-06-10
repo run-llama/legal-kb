@@ -1,226 +1,141 @@
-Welcome to your new TanStack Start app!
+# legal-kb
 
-# Getting Started
+A knowledge base for legal documents, powered by [LlamaIndex Index v2](https://cloud.llamaindex.ai) (the LlamaParse Platform).
 
-To run this application:
+Sign in, create a project, upload files, and chat with an agent that can run hybrid semantic search, find/read files, and grep across your documents. Each project is mirrored as a managed LlamaCloud index — uploads are parsed and indexed automatically, and the chat agent queries that index live.
+
+## What's in the box
+
+- **Auth**: WorkOS (AuthKit) — sign-in flow only; user ids drive ownership
+- **Storage**: PostgreSQL via Prisma. User API keys are encrypted at rest (AES-256-GCM)
+- **Indexing**: LlamaCloud Index v2 — one index per project, files uploaded + synced via the Index v2 API
+- **Chat**: Vercel AI SDK 6 (`useChat`) + TanStack Start server route, streaming `UIMessage`s. Markdown rendered with [Streamdown](https://github.com/vercel/streamdown)
+- **Persistence**: chat messages stored as full UIMessage JSON, grouped into conversations (multiple threads per project)
+- **Models**: pick OpenAI or Anthropic per turn; bring your own keys via the profile page
+
+## Stack
+
+TanStack Start · React 19 · Tailwind v4 · Prisma 7 · Vite · Bun · AI SDK 6 · `@llamaindex/llama-cloud` · WorkOS AuthKit
+
+## Prerequisites
+
+- [Bun](https://bun.sh) (1.3+)
+- A PostgreSQL database (local or hosted — Neon, Supabase, Render Postgres all work)
+- A [WorkOS](https://workos.com) account with an AuthKit application
+- A [LlamaCloud](https://cloud.llamaindex.ai) account (users add their keys via the profile page at runtime, so this isn't strictly needed at boot — but you'll want one to actually use the app)
+- An OpenAI and/or Anthropic API key (also added via the profile page)
+
+## Setup
 
 ```bash
 bun install
-bun --bun run dev
+cp .env.example .env.local   # then fill it in (see below)
+bun run db:push              # apply Prisma schema to your DB
+bun run dev                  # http://localhost:5173
 ```
 
-# Building For Production
+## Environment variables
 
-To build this application for production:
+All vars live in `.env.local`. Required:
+
+| Variable                   | Purpose                                                                                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | Postgres connection string (e.g. `postgres://user:pass@host:5432/legal_kb`)                                                                                |
+| `ENCRYPTION_KEY`           | **32-byte hex** (64 hex chars) — encrypts user API keys at rest. Generate with `openssl rand -hex 32`. **Rotating this invalidates all stored user keys.** |
+| `VITE_WORKOS_CLIENT_ID`    | From your WorkOS AuthKit application                                                                                                                       |
+| `VITE_WORKOS_API_HOSTNAME` | Your WorkOS Custom Authentication Domain (or default in dev)                                                                                               |
+
+Optional:
+
+| Variable                 | Purpose                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `NITRO_BUN_IDLE_TIMEOUT` | Bun keep-alive for long-running streams. Set to `255` (maximum) if you see streams getting cut short. |
+
+> User-facing API keys (LlamaCloud, OpenAI, Anthropic) are **not** in env. Each user enters them on `/user-profile`, where they're encrypted with `ENCRYPTION_KEY` and persisted per-user.
+
+## Database
+
+Schema lives in `prisma/schema.prisma`. Useful scripts:
 
 ```bash
-bun --bun run build
+bun run db:push       # push schema (no migration files) — good for dev
+bun run db:migrate    # create a named migration
+bun run db:studio     # open Prisma Studio
+bun run db:generate   # regenerate Prisma client after editing the schema
 ```
 
-## Testing
+Core tables:
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+- `User` — mirrors WorkOS users (lazily upserted)
+- `ApiKeys` — encrypted LlamaCloud / OpenAI / Anthropic credentials per user
+- `Project` — one row per project; holds the LlamaCloud `indexId`
+- `ProjectFile` — files uploaded to a project's index, with sync status
+- `Conversation` — chat threads scoped to `(userId, projectId)`
+- `Message` — full UIMessage JSON, ordered within a conversation
 
-```bash
-bun --bun run test
-```
+## Using the app
 
-## Styling
+1. **Sign in** via WorkOS.
+2. **Profile** (`/user-profile`): paste your LlamaCloud API key + project id, plus your OpenAI and/or Anthropic key. Saved keys are encrypted server-side.
+3. **Projects** (`/projects`): create a project. This creates a new LlamaCloud Index v2 mirror. Upload files (drag/drop or picker). Files sync to the index in the background — status polls until ready.
+4. **Chat** (`/chat`): pick a project, start (or pick) a conversation, pick a model, and ask away. The agent has these tools available:
+   - **hybrid search** over the project's index
+   - **find files** by name/glob
+   - **read file** contents
+   - **grep** across the project
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `bun install @tailwindcss/vite tailwindcss -D`
-
-## Linting & Formatting
-
-This project uses [eslint](https://eslint.org/) and [prettier](https://prettier.io/) for linting and formatting. Eslint is configured using [tanstack/eslint-config](https://tanstack.com/config/latest/docs/eslint). The following scripts are available:
+## Production build
 
 ```bash
-bun --bun run lint
-bun --bun run format
-bun --bun run check
-```
-
-## Deploy with Nitro
-
-This project uses Nitro as a generic server adapter, so it can run on any Node-compatible host.
-
-```bash
-npm run build
+bun run build
 node dist/server/index.mjs
 ```
 
-The build output is a self-contained Node server. To deploy, push the `dist/` directory to your host (Render, Fly.io, your own VPS, etc.) and run the server command above.
+The output is a self-contained Node server (via Nitro). Any Node-compatible host works — Render, Fly.io, your own VPS, etc. For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda), see [nitro.build/deploy](https://v3.nitro.build/deploy).
 
-For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
+Make sure `DATABASE_URL`, `ENCRYPTION_KEY`, and the `VITE_WORKOS_*` vars are set in your production environment. `VITE_*` vars are baked in at build time, the rest are read at runtime.
 
-## Setting up WorkOS
+## Project layout
 
-- Set the `VITE_WORKOS_CLIENT_ID` in your `.env.local`.
+```
+src/
+  routes/
+    index.tsx           landing page
+    chat.tsx            chat UI with conversation sidebar
+    projects.tsx        project CRUD + file upload/sync UI
+    user-profile.tsx    encrypted API key management
+    api/chat.ts         streaming chat endpoint (TanStack Start server route)
+  lib/
+    agent.ts            AI SDK agent definition + tools
+    files.ts            LlamaCloud Index v2 file ops
+    projects.ts         project CRUD server fns
+    messages.ts         conversation + message persistence
+    apiKeys.ts          encrypted credential storage
+    crypto.ts           AES-256-GCM helpers
+  components/           Header, Footer, etc.
+prisma/schema.prisma    DB schema
+```
 
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
+## Scripts
 
 ```bash
-pnpm dlx shadcn@latest add button
+bun run dev               # vite dev server on :5173
+bun run build             # production build
+bun run preview           # preview the production build
+bun run test              # vitest
+bun run lint              # eslint
+bun run format            # prettier + eslint --fix
+bun run check             # prettier --check
+bun run generate-routes   # regenerate routeTree.gen.ts
 ```
 
-## Routing
+## Troubleshooting
 
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
+- **"configure your LlamaCloud credentials"** — go to `/user-profile` and add them.
+- **Chat stream cut off mid-response** — set `NITRO_BUN_IDLE_TIMEOUT=255` in `.env.local`.
+- **`ENCRYPTION_KEY` errors at boot** — must be exactly 64 hex chars (32 bytes). Regenerate with `openssl rand -hex 32`.
+- **Files stuck "syncing"** — the projects page polls the index status; if a file errors, LlamaCloud's status will surface the reason. Detach + re-upload usually fixes transient parse failures.
 
-### Adding A Route
+## License
 
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from '@tanstack/react-router'
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+TBD.
