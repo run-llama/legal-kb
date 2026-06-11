@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useAuth } from '@workos-inc/authkit-react'
 
 export const Route = createFileRoute('/')({
@@ -43,24 +43,24 @@ function App() {
             </span>
           ) : user ? (
             <>
-              <a
-                href="/projects"
+              <Link
+                to="/projects"
                 className="rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-5 py-2.5 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition hover:-translate-y-0.5 hover:bg-[rgba(79,184,178,0.24)]"
               >
                 Go to Projects
-              </a>
-              <a
-                href="/chat"
+              </Link>
+              <Link
+                to="/chat"
                 className="rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] no-underline transition hover:-translate-y-0.5 hover:border-[rgba(23,58,64,0.35)]"
               >
                 Open Chat
-              </a>
-              <a
-                href="/user-profile"
+              </Link>
+              <Link
+                to="/user-profile"
                 className="rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] no-underline transition hover:-translate-y-0.5 hover:border-[rgba(23,58,64,0.35)]"
               >
                 Profile & API Keys
-              </a>
+              </Link>
             </>
           ) : (
             <>
@@ -70,12 +70,12 @@ function App() {
               >
                 Sign in to get started
               </button>
-              <a
-                href="/about"
+              <Link
+                to="/about"
                 className="rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] no-underline transition hover:-translate-y-0.5 hover:border-[rgba(23,58,64,0.35)]"
               >
                 Learn more
-              </a>
+              </Link>
             </>
           )}
         </div>
@@ -118,9 +118,9 @@ function App() {
         <ol className="m-0 list-decimal space-y-2 pl-5 text-sm text-[var(--sea-ink-soft)]">
           <li>
             Sign in and add your LlamaCloud + LLM provider keys on the{' '}
-            <a href="/user-profile" className="font-semibold underline">
+            <Link to="/user-profile" className="font-semibold underline">
               profile page
-            </a>
+            </Link>
             .
           </li>
           <li>
