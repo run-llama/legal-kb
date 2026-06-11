@@ -46,6 +46,7 @@ export async function createProject(input: CreateProjectInput) {
     description: input.description,
     source_directory_id: response.id,
     project_id: keys.llamacloudProjectId,
+    store_attachments: ['screenshots', 'items'],
   })
   const indexId = indexResp.id
   try {

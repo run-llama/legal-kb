@@ -20,6 +20,13 @@ import type { UIMessage, UIMessagePart, UIDataTypes, UITools } from 'ai'
 import { Streamdown } from 'streamdown'
 import { z } from 'zod'
 import type { ConversationSummary } from '@/lib/messages'
+import type { IndexedCitation } from '@/lib/citations'
+import {
+  collectCitationsFromMessage,
+  isCiteMarker,
+  parseCiteMarker,
+} from '@/lib/citations'
+import { CiteChip } from '@/components/CiteChip'
 import {
   createConversation,
   deleteConversation,
@@ -422,6 +429,7 @@ function ChatAuthed({ userId }: { userId: string }) {
               hasLlamaCloud={hasLlamaCloud}
               providerKeyMissing={providerKeyMissing}
               selectedProvider={selectedModel.provider}
+              chipUserId={userId}
             />
           ) : (
             <div className="island-shell rounded-2xl p-5 min-h-[40vh] flex items-center justify-center">
@@ -564,6 +572,7 @@ function ChatPanel({
   hasLlamaCloud,
   providerKeyMissing,
   selectedProvider,
+  chipUserId,
 }: {
   userId: string
   conversationId: string
@@ -571,6 +580,8 @@ function ChatPanel({
   hasLlamaCloud: boolean
   providerKeyMissing: boolean
   selectedProvider: 'openai' | 'anthropic'
+  /** Passed through to citation chips for proxied attachment fetches. */
+  chipUserId: string
 }) {
   // modelId lives in the parent. Refs let the transport read the latest
   // value at send-time without re-creating itself.
@@ -634,6 +645,7 @@ function ChatPanel({
       hasLlamaCloud={hasLlamaCloud}
       providerKeyMissing={providerKeyMissing}
       selectedProvider={selectedProvider}
+      chipUserId={chipUserId}
     />
   )
 }
@@ -644,12 +656,14 @@ function ChatPanelInner({
   hasLlamaCloud,
   providerKeyMissing,
   selectedProvider,
+  chipUserId,
 }: {
   initialMessages: UIMessage[]
   transport: DefaultChatTransport<UIMessage>
   hasLlamaCloud: boolean
   providerKeyMissing: boolean
   selectedProvider: 'openai' | 'anthropic'
+  chipUserId: string
 }) {
   // useChat snapshots `messages` on first render only, so this component is
   // mounted with the loaded history in place. Subsequent assistant streams
@@ -691,7 +705,7 @@ function ChatPanelInner({
         ) : (
           <ul className="m-0 list-none p-0 grid gap-3 overflow-y-auto flex-1">
             {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
+              <MessageBubble key={m.id} message={m} userId={chipUserId} />
             ))}
           </ul>
         )}
@@ -768,8 +782,21 @@ function ChatPanelInner({
 
 // ---------- message rendering ----------
 
-function MessageBubble({ message }: { message: UIMessage }) {
+function MessageBubble({
+  message,
+  userId,
+}: {
+  message: UIMessage
+  userId: string
+}) {
   const isUser = message.role === 'user'
+  // Harvest every citation emitted by retrieve tool calls in this message.
+  // Computed once per message render so all parts (and the footer) share
+  // the same id→index mapping.
+  const citations = useMemo(
+    () => (isUser ? new Map<string, IndexedCitation>() : collectCitationsFromMessage(message)),
+    [message, isUser],
+  )
   return (
     <li
       className={`rounded-xl border border-[var(--line)] p-3 ${
@@ -781,19 +808,72 @@ function MessageBubble({ message }: { message: UIMessage }) {
       </p>
       <div className="grid gap-2">
         {message.parts.map((part, i) => (
-          <MessagePart key={i} part={part} role={message.role} />
+          <MessagePart
+            key={i}
+            part={part}
+            role={message.role}
+            citations={citations}
+            userId={userId}
+          />
         ))}
       </div>
+      {citations.size > 0 && (
+        <CitationsFooter
+          citations={Array.from(citations.values())}
+          userId={userId}
+        />
+      )}
     </li>
   )
+}
+
+/**
+ * Streamdown component override map. We hijack inline `<code>` to detect
+ * citation tokens of the form `cite:<id>` and replace them with a chip.
+ * Block code (inside ```fences```) is unaffected because Streamdown routes
+ * those through a separate `code` component slot.
+ */
+function buildStreamdownComponents(
+  citations: Map<string, IndexedCitation>,
+  userId: string,
+) {
+  return {
+    inlineCode: (props: { children?: React.ReactNode }) => {
+      const text = extractText(props.children)
+      if (text && isCiteMarker(text)) {
+        const id = parseCiteMarker(text)!
+        return <CiteChip citation={citations.get(id)} userId={userId} />
+      }
+      // Fall back to a normal <code> rendering. We keep this minimal
+      // (no Streamdown chrome) because nested inline-code is rare and
+      // hijacking the slot means we own the rendering.
+      return (
+        <code className="rounded bg-[var(--line)]/40 px-1 py-0.5 text-[0.9em] font-mono">
+          {props.children}
+        </code>
+      )
+    },
+  }
+}
+
+/** Pull a flat string out of React children (handles strings + arrays). */
+function extractText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(extractText).join('')
+  return ''
 }
 
 function MessagePart({
   part,
   role,
+  citations,
+  userId,
 }: {
   part: UIMessagePart<UIDataTypes, UITools>
   role: UIMessage['role']
+  citations: Map<string, IndexedCitation>
+  userId: string
 }) {
   if (part.type === 'text') {
     // User text is rendered verbatim — they typed plain text and we don't
@@ -808,7 +888,9 @@ function MessagePart({
     }
     return (
       <div className="prose prose-sm max-w-none text-[var(--sea-ink)] prose-pre:bg-[var(--line)]/30 prose-pre:text-[var(--sea-ink)] prose-code:text-[var(--sea-ink)] prose-headings:text-[var(--sea-ink)] prose-strong:text-[var(--sea-ink)] prose-a:text-[var(--lagoon-deep)]">
-        <Streamdown>{part.text}</Streamdown>
+        <Streamdown components={buildStreamdownComponents(citations, userId)}>
+          {part.text}
+        </Streamdown>
       </div>
     )
   }
@@ -866,4 +948,44 @@ function MessagePart({
 
   // step-start, source-*, file, data-* — render nothing for now.
   return null
+}
+
+/**
+ * Compact list of every citation referenced in this assistant message,
+ * shown beneath the message body. Each entry is itself a chip + label so
+ * the user can click straight to the modal even if they don't notice the
+ * inline marker.
+ */
+function CitationsFooter({
+  citations,
+  userId,
+}: {
+  citations: IndexedCitation[]
+  userId: string
+}) {
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--line)]">
+      <p className="island-kicker m-0 mb-2 text-[10px]">Sources</p>
+      <ul className="m-0 list-none p-0 grid gap-1.5">
+        {citations.map((c) => (
+          <li key={c.id} className="flex items-start gap-2 text-xs">
+            <CiteChip citation={c} userId={userId} />
+            <span className="text-[var(--sea-ink)] min-w-0 flex-1">
+              <span className="font-medium truncate inline-block max-w-full align-bottom">
+                {c.fileName || 'Unknown file'}
+              </span>
+              {c.pageStart != null && (
+                <span className="text-[var(--sea-ink-soft)]">
+                  {' · '}
+                  {c.pageEnd && c.pageEnd !== c.pageStart
+                    ? `p. ${c.pageStart}–${c.pageEnd}`
+                    : `p. ${c.pageStart}`}
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
