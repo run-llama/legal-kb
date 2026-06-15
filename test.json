@@ -1,0 +1,111 @@
+{
+  "page_number": 8,
+  "items": [
+    {
+      "type": "header",
+      "items": [
+        {
+          "type": "text",
+          "value": "EMPLOYMENT LAW IN GERMANY\n33",
+          "md": "EMPLOYMENT LAW IN GERMANY\n33",
+          "bbox": [
+            {
+              "start_index": 0,
+              "end_index": 27,
+              "x": 158.98,
+              "y": -25.12,
+              "w": 167.76,
+              "h": 195.11,
+              "confidence": 0.4,
+              "label": "text"
+            }
+          ]
+        }
+      ],
+      "md": "EMPLOYMENT LAW IN GERMANY\n33",
+      "bbox": [{ "x": 158.98, "y": -25.12, "w": 167.76, "h": 195.11 }]
+    },
+    {
+      "type": "text",
+      "value": "02 | E\nCompensation and Benefits",
+      "md": "02 | E\nCompensation and Benefits",
+      "bbox": [
+        {
+          "start_index": 0,
+          "end_index": 31,
+          "x": 42,
+          "y": 126,
+          "w": 133,
+          "h": 24,
+          "confidence": 0.73,
+          "label": "image"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "value": "Health Insurance and other Social Insurance",
+      "md": "# Health Insurance and other Social Insurance",
+      "bbox": [
+        {
+          "start_index": 0,
+          "end_index": 22,
+          "x": 41,
+          "y": 195,
+          "w": 285,
+          "h": 91,
+          "confidence": 0.53,
+          "label": "text"
+        },
+        {
+          "start_index": 23,
+          "end_index": 44,
+          "x": 42,
+          "y": 322,
+          "w": 285,
+          "h": 49,
+          "confidence": 0.57,
+          "label": "text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "value": "In Germany, statutory social insurance is mandatory for most employees. It covers pension insurance, unemployment insurance, home and institutional care insurance, employee accident insurance, and health care insurance. The employer and employee each pay about 50% of the social insurance premiums. Currently, the payment amounts to approximately 40% of an employee's gross monthly salary, with the employee and employer each paying about 20%.",
+      "md": "In Germany, statutory social insurance is mandatory for most employees. It covers pension insurance, unemployment insurance, home and institutional care insurance, employee accident insurance, and health care insurance. The employer and employee each pay about 50% of the social insurance premiums. Currently, the payment amounts to approximately 40% of an employee's gross monthly salary, with the employee and employer each paying about 20%.",
+      "bbox": [
+        {
+          "start_index": 0,
+          "end_index": 442,
+          "x": 42,
+          "y": 159,
+          "w": 282,
+          "h": 14,
+          "confidence": 0.53,
+          "label": "paragraph_title"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "value": "The statutory health insurance under the <u>Social Code No. V (</u><u>Sozialgesetz-buch F\u00fcnftes Buch</u><u>)</u> performs and promotes health care and avoidance of illness. It includes medical treatment, dental treatment, provision of pharmaceuticals, etc.",
+      "md": "The statutory health insurance under the <u>Social Code No. V (</u>*<u>Sozialgesetz-buch F\u00fcnftes Buch</u>*<u>)</u> performs and promotes health care and avoidance of illness. It includes medical treatment, dental treatment, provision of pharmaceuticals, etc.",
+      "bbox": [
+        {
+          "start_index": 0,
+          "end_index": 257,
+          "x": 115.49,
+          "y": -25.12,
+          "w": 60.63,
+          "h": 374.16,
+          "confidence": 0.4,
+          "label": "text"
+        }
+      ]
+    }
+  ],
+  "page_height": 481.89,
+  "page_width": 368.5,
+  "success": true
+}

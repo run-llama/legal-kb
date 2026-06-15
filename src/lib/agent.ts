@@ -12,7 +12,11 @@ function createLlamaParseTools(
   indexId: string,
 ) {
   const getClient = () => {
-    return new LlamaCloud({ apiKey: llamaCloudApiKey })
+    return new LlamaCloud({
+      apiKey: llamaCloudApiKey,
+      baseURL:
+        process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+    })
   }
 
   const getProjectId = () => {
@@ -65,7 +69,6 @@ function createLlamaParseTools(
       const citations: Citation[] = []
       for (let i = 0; i < response.results.length; i++) {
         const result = response.results[i]
-        console.log('[RESULT]', JSON.stringify(result))
         const sf = result.static_fields ?? {}
         const meta = (result.metadata ?? {}) as Record<string, unknown>
         const fileName =
@@ -82,9 +85,17 @@ function createLlamaParseTools(
             : typeof meta.file_id === 'string'
               ? meta.file_id
               : ''
-        const screenshot = (sf.attachments ?? []).find(
-          (a) => a.type === 'screenshot',
-        )
+        const attachments = sf.attachments ?? []
+        const screenshot = attachments.find((a) => a.type === 'screenshot')
+        // 'items' (or any non-screenshot type pointing at a JSON layout
+        // file) carries the per-page bbox tree. The type label has been
+        // 'items' in practice; we also accept names that end in .json as a
+        // fallback in case the type label changes.
+        const items =
+          attachments.find((a) => a.type === 'items') ??
+          attachments.find(
+            (a) => a.type !== 'screenshot' && a.attachment_name.endsWith('.json'),
+          )
 
         const id = makeCitationId()
         const preview = result.content.slice(0, 240)
@@ -99,6 +110,12 @@ function createLlamaParseTools(
             ? {
                 name: screenshot.attachment_name,
                 sourceId: screenshot.source_id,
+              }
+            : null,
+          itemsAttachment: items
+            ? {
+                name: items.attachment_name,
+                sourceId: items.source_id,
               }
             : null,
           preview,

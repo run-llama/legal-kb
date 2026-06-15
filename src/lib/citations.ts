@@ -26,11 +26,20 @@ export type Citation = {
   /** Page range covered by this chunk, if known. */
   pageStart: number | null
   pageEnd: number | null
-  /** First screenshot attachment, if any. */
+  /** Page screenshot attachment, if any. */
   attachment: {
     /** e.g. "screenshots/page_7.jpg" — the attachment_name from LlamaCloud. */
     name: string
     /** source_id required for the attachments endpoint. */
+    sourceId: string
+  } | null
+  /**
+   * Layout/items JSON attachment, if any. We use this to overlay bbox
+   * highlights on top of the screenshot showing exactly which paragraph
+   * was cited.
+   */
+  itemsAttachment: {
+    name: string
     sourceId: string
   } | null
   /** Trimmed preview of the chunk text — shown under the screenshot. */
@@ -114,6 +123,19 @@ export function collectCitations(
             ? {
                 name: (cand.attachment as { name: string }).name,
                 sourceId: (cand.attachment as { sourceId: string }).sourceId,
+              }
+            : null,
+        itemsAttachment:
+          cand.itemsAttachment &&
+          typeof cand.itemsAttachment === 'object' &&
+          typeof (cand.itemsAttachment as { name?: unknown }).name ===
+            'string' &&
+          typeof (cand.itemsAttachment as { sourceId?: unknown }).sourceId ===
+            'string'
+            ? {
+                name: (cand.itemsAttachment as { name: string }).name,
+                sourceId: (cand.itemsAttachment as { sourceId: string })
+                  .sourceId,
               }
             : null,
         preview: typeof cand.preview === 'string' ? cand.preview : '',

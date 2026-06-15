@@ -163,7 +163,6 @@ export const Route = createFileRoute('/api/chat')({
             }
             try {
               await saveMessage(userId, conversationId, responseMessage)
-              console.log('[chat] saved assistant message', responseMessage.id)
             } catch (err) {
               console.error('[chat] failed to save assistant message:', err)
             }

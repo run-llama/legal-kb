@@ -13,9 +13,16 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import { getDecryptedApiKeys } from '@/lib/apiKeys'
+import z from 'zod'
 
 const LLAMACLOUD_BASE =
   process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai'
+
+const PresignedUrlSchema = z.object({
+  url: z.url(),
+  expires_at: z.iso.datetime(),
+  form_fields: z.any().nullable(),
+})
 
 export const Route = createFileRoute('/api/attachment')({
   server: {
@@ -49,7 +56,7 @@ export const Route = createFileRoute('/api/attachment')({
         upstream.searchParams.set('source_id', sourceId)
         // If the user configured a project id, scope the request to it.
         if (keys.llamacloudProjectId) {
-          upstream.searchParams.set('project_id', keys.llamacloudProjectId)
+          upstream.searchParams.set('project', keys.llamacloudProjectId)
         }
 
         const upstreamRes = await fetch(upstream, {
@@ -67,12 +74,29 @@ export const Route = createFileRoute('/api/attachment')({
           )
         }
 
-        // Stream the body through. Preserve content-type so <img> works.
-        return new Response(upstreamRes.body, {
+        // LlamaCloud returns a JSON envelope with a presigned URL pointing
+        // at the actual asset (likely S3/GCS). We follow it server-side so
+        // the browser only ever sees our origin.
+        const validatedBody = await PresignedUrlSchema.parseAsync(
+          await upstreamRes.json(),
+        )
+
+        const actualRes = await fetch(validatedBody.url)
+        if (!actualRes.ok || !actualRes.body) {
+          return Response.json(
+            { error: `presigned fetch returned ${actualRes.status}` },
+            { status: 502 },
+          )
+        }
+
+        // IMPORTANT: take the content-type from the presigned (image)
+        // response, NOT from the LlamaCloud JSON envelope. Otherwise the
+        // browser sees application/json and refuses to render the image.
+        return new Response(actualRes.body, {
           status: 200,
           headers: {
             'Content-Type':
-              upstreamRes.headers.get('content-type') ??
+              actualRes.headers.get('content-type') ??
               'application/octet-stream',
             // Attachments are immutable for a given (name, sourceId).
             'Cache-Control': 'private, max-age=3600',

@@ -133,7 +133,11 @@ export async function uploadFile(input: UploadFileInput) {
   })
   if (!project) throw new Error('project not found for this user')
 
-  const client = new LlamaCloud({ apiKey: llamacloudKey })
+  const client = new LlamaCloud({
+    apiKey: llamacloudKey,
+    baseURL:
+      process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+  })
   const sourceDirId = await getSourceDirectoryId(client, project.indexId)
 
   // 1. Upload bytes to LlamaCloud.
@@ -217,7 +221,11 @@ export async function detachFileFromProject(input: DetachFileInput) {
   })
   if (!link) throw new Error('file is not attached to this project')
 
-  const client = new LlamaCloud({ apiKey: llamacloudKey })
+  const client = new LlamaCloud({
+    apiKey: llamacloudKey,
+    baseURL:
+      process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+  })
   const sourceDirId = await getSourceDirectoryId(client, project.indexId)
 
   // Remove from LlamaCloud first — if this fails we keep the DB link so the
@@ -275,7 +283,11 @@ export async function deleteFile(input: DeleteFileInput) {
     include: { project: { select: { id: true, indexId: true } } },
   })
 
-  const client = new LlamaCloud({ apiKey: llamacloudKey })
+  const client = new LlamaCloud({
+    apiKey: llamacloudKey,
+    baseURL:
+      process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+  })
 
   // Remove from each source directory. We collect failures rather than
   // aborting on the first one — partial cleanup is better than none.
@@ -370,7 +382,11 @@ export async function syncProjectIndex(userId: string, projectId: string) {
     select: { indexId: true },
   })
   if (!project) throw new Error('project not found for this user')
-  const client = new LlamaCloud({ apiKey: llamacloudKey })
+  const client = new LlamaCloud({
+    apiKey: llamacloudKey,
+    baseURL:
+      process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+  })
   await client.beta.indexes.sync(project.indexId)
   return { syncTriggered: true }
 }

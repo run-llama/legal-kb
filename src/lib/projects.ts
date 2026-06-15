@@ -32,7 +32,11 @@ export async function createProject(input: CreateProjectInput) {
       'user did not configure the necessary credentials for the LlamaParse Platform',
     )
   }
-  const client = new LlamaCloud({ apiKey: decrypt(keys.llamacloudKey) })
+  const client = new LlamaCloud({
+    apiKey: decrypt(keys.llamacloudKey),
+    baseURL:
+      process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+  })
   if (await sourceDirExists(client, input.name)) {
     throw new Error('index already exists in LlamaCloud')
   }
@@ -88,7 +92,11 @@ export async function deleteProject(input: DeleteProjectInput) {
     throw new Error('LlamaCloud credentials are not configured')
   }
 
-  const client = new LlamaCloud({ apiKey: decrypt(keys.llamacloudKey) })
+  const client = new LlamaCloud({
+    apiKey: decrypt(keys.llamacloudKey),
+    baseURL:
+      process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+  })
 
   // 1. Delete from LlamaCloud first
   const resp = await client.beta.indexes.get(input.indexId)
