@@ -41,6 +41,8 @@ export type Citation = {
   fileName: string
   /** LlamaCloud file_id — used to fetch attachments via /api/attachment. */
   fileId: string
+  /** Version of the file */
+  version: number
   /** Page range covered by this chunk, if known. */
   pageStart: number | null
   pageEnd: number | null
@@ -138,6 +140,7 @@ export function collectCitations(
         preview: typeof cand.preview === 'string' ? cand.preview : '',
         score: typeof cand.score === 'number' ? cand.score : null,
         index: nextIndex++,
+        version: typeof cand.version === 'number' ? cand.version : 1,
       })
     }
   }
@@ -188,8 +191,7 @@ function parsePagesField(cand: Record<string, unknown>): CitationPage[] {
       const name = screenshot?.name ?? items?.name ?? ''
       const inferred = parsePageNumber(name)
       const page =
-        inferred ??
-        (typeof cand.pageStart === 'number' ? cand.pageStart : 0)
+        inferred ?? (typeof cand.pageStart === 'number' ? cand.pageStart : 0)
       out.push({ page, screenshot, items })
     }
   }

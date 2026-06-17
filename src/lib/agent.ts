@@ -6,6 +6,36 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import type { Citation, CitationPage } from './citations'
 import { makeCitationId, parsePageNumber } from './citations'
+import type { RetrievalRetrieveParams } from '@llamaindex/llama-cloud/resources/beta/retrieval.mjs'
+
+/** Schema to validate the response from the export configs endpoint */
+export const ExportSchema = z.object({
+  id: z.string(),
+
+  created_at: z.iso.datetime(),
+
+  updated_at: z.iso.datetime(),
+
+  project_id: z.uuid(),
+
+  output_directory_id: z.string(),
+
+  export_type: z.string(),
+
+  destination: z.string(),
+
+  include_metadata: z.boolean(),
+
+  include_embeddings: z.boolean(),
+
+  deletion_mode: z.string(),
+
+  destination_config: z.unknown().nullable(),
+
+  last_exported_at: z.iso.datetime(),
+})
+
+export type Export = z.infer<typeof ExportSchema>
 
 /**
  * Turn LlamaCloud's flat `attachments` array into a per-page list. We
@@ -46,6 +76,68 @@ function buildCitationPages(
     }
   }
   return [...byPage.values()].sort((a, b) => a.page - b.page)
+}
+
+/** Get the output directory ID given an Index */
+async function getOutputDirectoryId(
+  indexId: string,
+  apiKey: string,
+  maxRetries = 3,
+) {
+  const baseURL =
+    process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai'
+
+  let lastError: Error | undefined
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(
+        `${baseURL}/api/v1/directories/export-configs/${indexId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+          },
+        },
+      )
+
+      // Don't retry on 4xx — these are client errors that won't resolve on their own
+      if (
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status != 429
+      ) {
+        throw new Error(
+          `Client error ${response.status}: Could not find any export config`,
+        )
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `Server error ${response.status}: Could not find any export config`,
+        )
+      }
+
+      const data = await response.json()
+      const validated = await ExportSchema.parseAsync(data)
+      return validated.output_directory_id
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+
+      // Don't retry 4xx errors, except for rate limits
+      if (lastError.message.startsWith('Client error')) throw lastError
+
+      if (attempt < maxRetries) {
+        const delay = 2 ** (attempt - 1) * 500 // 500ms, 1000ms, 2000ms
+        console.warn(
+          `Attempt ${attempt} failed, retrying in ${delay}ms...`,
+          lastError.message,
+        )
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
+
+  throw new Error(`Failed after ${maxRetries} attempts: ${lastError?.message}`)
 }
 
 function createLlamaParseTools(
@@ -90,9 +182,38 @@ function createLlamaParseTools(
         .describe(
           'If set, enables reranking and returns the top N reranked results.',
         ),
+      file_name: z
+        .string()
+        .nullable()
+        .describe(
+          'File name metadata filter. If not specified, all files are considered. Use only when the file name is exactly known.',
+        ),
+      file_version: z
+        .number()
+        .nullable()
+        .describe(
+          'File version metadata filter. If not specified, all file versions are considered. Only applies when file_name is specified.',
+        ),
     }),
-    execute: async ({ query, top_k, score_threshold, rerank_top_n }) => {
+    execute: async ({
+      query,
+      top_k,
+      score_threshold,
+      rerank_top_n,
+      file_name,
+      file_version,
+    }) => {
       const client = getClient()
+      const custom_filters: Record<
+        string,
+        RetrievalRetrieveParams.FilterTypeUnionStrIntBoolFloat
+      > = {}
+      if (file_name) {
+        custom_filters['file_name'] = { operator: 'eq', value: file_name }
+        if (file_version) {
+          custom_filters['version'] = { operator: 'eq', value: file_version }
+        }
+      }
       const response = await client.beta.retrieval.retrieve({
         index_id: indexId,
         project_id: getProjectId(),
@@ -103,6 +224,8 @@ function createLlamaParseTools(
           rerank_top_n != null
             ? { enabled: true, top_n: rerank_top_n }
             : undefined,
+        custom_filters:
+          Object.keys(custom_filters).length > 0 ? custom_filters : undefined,
       })
 
       // Build both a human/model-readable formatted string AND a structured
@@ -130,6 +253,7 @@ function createLlamaParseTools(
         const meta = (result.metadata ?? {}) as Record<string, unknown>
         const fileName =
           typeof meta.file_name === 'string' ? meta.file_name : 'unknown file'
+        const fileVersion = typeof meta.version === 'number' ? meta.version : 1
         const fileId =
           typeof sf.parsed_directory_file_id === 'string'
             ? sf.parsed_directory_file_id
@@ -149,6 +273,7 @@ function createLlamaParseTools(
             id,
             fileName,
             fileId,
+            version: fileVersion,
             pageStart: sf.page_range_start ?? null,
             pageEnd: sf.page_range_end ?? null,
             pages,
@@ -200,17 +325,33 @@ function createLlamaParseTools(
     }),
     execute: async ({ file_name, file_name_contains }) => {
       const client = getClient()
-      const files: Array<{ fileName: string; fileId: string }> = []
+      const getFileVersion = async (fileId: string) => {
+        const outputId = await getOutputDirectoryId(indexId, llamaCloudApiKey)
+        const fl = await client.beta.directories.files.get(fileId, {
+          directory_id: outputId,
+          expand: ['metadata'],
+        })
+        return fl.metadata?.version ?? 1
+      }
+      const files: Array<{
+        fileName: string
+        fileId: string
+        version: number
+      }> = []
       for await (const item of client.beta.retrieval.find({
         index_id: indexId,
         project_id: getProjectId(),
         file_name: file_name,
         file_name_contains: file_name_contains,
       })) {
-        files.push({ fileName: item.file_name, fileId: item.file_id })
+        files.push({
+          fileName: item.file_name,
+          fileId: item.file_id,
+          version: (await getFileVersion(item.file_id)) as number,
+        })
       }
       const ls = files
-        .map((f) => `- ${f.fileName} (ID: ${f.fileId})`)
+        .map((f) => `- ${f.fileName} (ID: ${f.fileId}, Version: ${f.version})`)
         .join('\n')
       return `Files matching the query:\n${ls}`
     },
@@ -366,44 +507,46 @@ export function buildAgent(
       indexId,
     ),
     instructions: `You are a legal research assistant with access to a document index. \
-    Your role is to help users understand, navigate, and extract information from the legal documents in their index.
+        Your role is to help users understand, navigate, and extract information from the legal documents in their index.
+        ## Core behavior
+        - Ground every answer in the documents. Before responding, always use the retrieval or search tools to find relevant content.
+        - If the documents do not contain enough information to answer a question, say so explicitly — do not fill gaps with general legal knowledge.
+        - Never give legal advice, opinions, or recommendations. You surface and explain what the documents say; you do not interpret them beyond that.
+        - Always cite the source document and, where possible, the specific section or page you are drawing from.
 
-    ## Core behavior
-    - Ground every answer in the documents. Before responding, always use the retrieval or search tools to find relevant content.
-    - If the documents do not contain enough information to answer a question, say so explicitly — do not fill gaps with general legal knowledge.
-    - Never give legal advice, opinions, or recommendations. You surface and explain what the documents say; you do not interpret them beyond that.
-    - Always cite the source document and, where possible, the specific section or page you are drawing from.
+        ## Tool usage
+        - **ALWAYS begin every conversation and every new query by calling \`findFiles\` with no arguments to list all available documents in the index. Do this before any other tool call, without exception — even if the user's question seems straightforward.**
+        - Use \`retrieve\` for broad semantic questions ("what does this contract say about termination?").
+        - Use \`findFiles\` when the user references a specific document by name.
+        - Use \`readFile\` to read a full document or a specific section when precision is needed.
+        - Use \`grepFile\` to locate specific clauses, terms, or patterns within a known document.
+        - Prefer chaining tools: retrieve to find candidates, then readFile or grepFile to confirm exact wording.
+        - **Tool call order for every query:**
+          1. \`findFiles\` (no args) — establish the full document inventory
+          2. \`retrieve\` or \`findFiles\` (with name) — narrow to relevant candidates
+          3. \`readFile\` or \`grepFile\` — confirm exact wording before citing
 
-    ## Tool usage
-    - Use \`retrieve\` for broad semantic questions ("what does this contract say about termination?").
-    - Use \`findFiles\` when the user references a specific document by name.
-    - Use \`readFile\` to read a full document or a specific section when precision is needed.
-    - Use \`grepFile\` to locate specific clauses, terms, or patterns within a known document.
-    - Prefer chaining tools: retrieve to find candidates, then readFile or grepFile to confirm exact wording.
+        ## Citations (very important)
+        The \`retrieve\` tool returns a list of results, each with a short id
+        (e.g. "c7f2qa"). When you state a fact that comes from a specific
+        result, append a citation marker immediately after the sentence using
+        inline code with the prefix "cite:", like this:
+            The contract terminates after 12 months \`cite:c7f2qa\`.
+        Rules:
+        - Only cite ids that appeared in a \`retrieve\` tool result during
+          THIS turn. Never invent ids; never reuse ids across turns.
+        - Cite at the END of the sentence (or clause) the fact came from, not
+          at the start.
+        - If multiple results support the same fact, cite all of them in a
+          row: \`cite:c7f2qa\` \`cite:cf8ab1\`.
+        - Do NOT cite for paraphrased general knowledge or for opinions —
+          only for facts you took from a specific retrieved chunk.
+        - Do NOT add a separate "Sources" section at the end; the UI already
+          shows a list of all cited sources below the answer.
 
-    ## Citations (very important)
-    The \`retrieve\` tool returns a list of results, each with a short id
-    (e.g. "c7f2qa"). When you state a fact that comes from a specific
-    result, append a citation marker immediately after the sentence using
-    inline code with the prefix "cite:", like this:
-
-        The contract terminates after 12 months \`cite:c7f2qa\`.
-
-    Rules:
-    - Only cite ids that appeared in a \`retrieve\` tool result during
-      THIS turn. Never invent ids; never reuse ids across turns.
-    - Cite at the END of the sentence (or clause) the fact came from, not
-      at the start.
-    - If multiple results support the same fact, cite all of them in a
-      row: \`cite:c7f2qa\` \`cite:cf8ab1\`.
-    - Do NOT cite for paraphrased general knowledge or for opinions —
-      only for facts you took from a specific retrieved chunk.
-    - Do NOT add a separate "Sources" section at the end; the UI already
-      shows a list of all cited sources below the answer.
-
-    ## Boundaries
-    - Do not answer questions that are not grounded in the indexed documents.
-    - Do not speculate about jurisdiction, enforceability, or legal outcomes.
-    - If asked for legal advice, remind the user that you are a research tool and recommend they consult a qualified lawyer.`,
+        ## Boundaries
+        - Do not answer questions that are not grounded in the indexed documents.
+        - Do not speculate about jurisdiction, enforceability, or legal outcomes.
+        - If asked for legal advice, remind the user that you are a research tool and recommend they consult a qualified lawyer.`,
   })
 }

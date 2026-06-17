@@ -1059,6 +1059,7 @@ export type FileScalarFieldEnum =
 export const ProjectFileScalarFieldEnum = {
   projectId: 'projectId',
   fileId: 'fileId',
+  version: 'version',
 } as const
 
 export type ProjectFileScalarFieldEnum =

@@ -20,39 +20,63 @@ export type ProjectFileModel =
 
 export type AggregateProjectFile = {
   _count: ProjectFileCountAggregateOutputType | null
+  _avg: ProjectFileAvgAggregateOutputType | null
+  _sum: ProjectFileSumAggregateOutputType | null
   _min: ProjectFileMinAggregateOutputType | null
   _max: ProjectFileMaxAggregateOutputType | null
+}
+
+export type ProjectFileAvgAggregateOutputType = {
+  version: number | null
+}
+
+export type ProjectFileSumAggregateOutputType = {
+  version: number | null
 }
 
 export type ProjectFileMinAggregateOutputType = {
   projectId: string | null
   fileId: string | null
+  version: number | null
 }
 
 export type ProjectFileMaxAggregateOutputType = {
   projectId: string | null
   fileId: string | null
+  version: number | null
 }
 
 export type ProjectFileCountAggregateOutputType = {
   projectId: number
   fileId: number
+  version: number
   _all: number
+}
+
+export type ProjectFileAvgAggregateInputType = {
+  version?: true
+}
+
+export type ProjectFileSumAggregateInputType = {
+  version?: true
 }
 
 export type ProjectFileMinAggregateInputType = {
   projectId?: true
   fileId?: true
+  version?: true
 }
 
 export type ProjectFileMaxAggregateInputType = {
   projectId?: true
   fileId?: true
+  version?: true
 }
 
 export type ProjectFileCountAggregateInputType = {
   projectId?: true
   fileId?: true
+  version?: true
   _all?: true
 }
 
@@ -99,6 +123,18 @@ export type ProjectFileAggregateArgs<
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    *
+   * Select which fields to average
+   **/
+  _avg?: ProjectFileAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   *
+   * Select which fields to sum
+   **/
+  _sum?: ProjectFileSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   *
    * Select which fields to find the minimum value
    **/
   _min?: ProjectFileMinAggregateInputType
@@ -131,6 +167,8 @@ export type ProjectFileGroupByArgs<
   take?: number
   skip?: number
   _count?: ProjectFileCountAggregateInputType | true
+  _avg?: ProjectFileAvgAggregateInputType
+  _sum?: ProjectFileSumAggregateInputType
   _min?: ProjectFileMinAggregateInputType
   _max?: ProjectFileMaxAggregateInputType
 }
@@ -138,7 +176,10 @@ export type ProjectFileGroupByArgs<
 export type ProjectFileGroupByOutputType = {
   projectId: string
   fileId: string
+  version: number
   _count: ProjectFileCountAggregateOutputType | null
+  _avg: ProjectFileAvgAggregateOutputType | null
+  _sum: ProjectFileSumAggregateOutputType | null
   _min: ProjectFileMinAggregateOutputType | null
   _max: ProjectFileMaxAggregateOutputType | null
 }
@@ -162,6 +203,7 @@ export type ProjectFileWhereInput = {
   NOT?: Prisma.ProjectFileWhereInput | Prisma.ProjectFileWhereInput[]
   projectId?: Prisma.StringFilter<'ProjectFile'> | string
   fileId?: Prisma.StringFilter<'ProjectFile'> | string
+  version?: Prisma.IntFilter<'ProjectFile'> | number
   project?: Prisma.XOR<
     Prisma.ProjectScalarRelationFilter,
     Prisma.ProjectWhereInput
@@ -172,6 +214,7 @@ export type ProjectFileWhereInput = {
 export type ProjectFileOrderByWithRelationInput = {
   projectId?: Prisma.SortOrder
   fileId?: Prisma.SortOrder
+  version?: Prisma.SortOrder
   project?: Prisma.ProjectOrderByWithRelationInput
   file?: Prisma.FileOrderByWithRelationInput
 }
@@ -184,6 +227,7 @@ export type ProjectFileWhereUniqueInput = Prisma.AtLeast<
     NOT?: Prisma.ProjectFileWhereInput | Prisma.ProjectFileWhereInput[]
     projectId?: Prisma.StringFilter<'ProjectFile'> | string
     fileId?: Prisma.StringFilter<'ProjectFile'> | string
+    version?: Prisma.IntFilter<'ProjectFile'> | number
     project?: Prisma.XOR<
       Prisma.ProjectScalarRelationFilter,
       Prisma.ProjectWhereInput
@@ -196,9 +240,12 @@ export type ProjectFileWhereUniqueInput = Prisma.AtLeast<
 export type ProjectFileOrderByWithAggregationInput = {
   projectId?: Prisma.SortOrder
   fileId?: Prisma.SortOrder
+  version?: Prisma.SortOrder
   _count?: Prisma.ProjectFileCountOrderByAggregateInput
+  _avg?: Prisma.ProjectFileAvgOrderByAggregateInput
   _max?: Prisma.ProjectFileMaxOrderByAggregateInput
   _min?: Prisma.ProjectFileMinOrderByAggregateInput
+  _sum?: Prisma.ProjectFileSumOrderByAggregateInput
 }
 
 export type ProjectFileScalarWhereWithAggregatesInput = {
@@ -211,9 +258,11 @@ export type ProjectFileScalarWhereWithAggregatesInput = {
     | Prisma.ProjectFileScalarWhereWithAggregatesInput[]
   projectId?: Prisma.StringWithAggregatesFilter<'ProjectFile'> | string
   fileId?: Prisma.StringWithAggregatesFilter<'ProjectFile'> | string
+  version?: Prisma.IntWithAggregatesFilter<'ProjectFile'> | number
 }
 
 export type ProjectFileCreateInput = {
+  version?: number
   project: Prisma.ProjectCreateNestedOneWithoutFilesInput
   file: Prisma.FileCreateNestedOneWithoutProjectsInput
 }
@@ -221,9 +270,11 @@ export type ProjectFileCreateInput = {
 export type ProjectFileUncheckedCreateInput = {
   projectId: string
   fileId: string
+  version?: number
 }
 
 export type ProjectFileUpdateInput = {
+  version?: Prisma.IntFieldUpdateOperationsInput | number
   project?: Prisma.ProjectUpdateOneRequiredWithoutFilesNestedInput
   file?: Prisma.FileUpdateOneRequiredWithoutProjectsNestedInput
 }
@@ -231,18 +282,23 @@ export type ProjectFileUpdateInput = {
 export type ProjectFileUncheckedUpdateInput = {
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
   fileId?: Prisma.StringFieldUpdateOperationsInput | string
+  version?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type ProjectFileCreateManyInput = {
   projectId: string
   fileId: string
+  version?: number
 }
 
-export type ProjectFileUpdateManyMutationInput = {}
+export type ProjectFileUpdateManyMutationInput = {
+  version?: Prisma.IntFieldUpdateOperationsInput | number
+}
 
 export type ProjectFileUncheckedUpdateManyInput = {
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
   fileId?: Prisma.StringFieldUpdateOperationsInput | string
+  version?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type ProjectFileListRelationFilter = {
@@ -263,16 +319,27 @@ export type ProjectFileProjectIdFileIdCompoundUniqueInput = {
 export type ProjectFileCountOrderByAggregateInput = {
   projectId?: Prisma.SortOrder
   fileId?: Prisma.SortOrder
+  version?: Prisma.SortOrder
+}
+
+export type ProjectFileAvgOrderByAggregateInput = {
+  version?: Prisma.SortOrder
 }
 
 export type ProjectFileMaxOrderByAggregateInput = {
   projectId?: Prisma.SortOrder
   fileId?: Prisma.SortOrder
+  version?: Prisma.SortOrder
 }
 
 export type ProjectFileMinOrderByAggregateInput = {
   projectId?: Prisma.SortOrder
   fileId?: Prisma.SortOrder
+  version?: Prisma.SortOrder
+}
+
+export type ProjectFileSumOrderByAggregateInput = {
+  version?: Prisma.SortOrder
 }
 
 export type ProjectFileCreateNestedManyWithoutProjectInput = {
@@ -496,11 +563,13 @@ export type ProjectFileUncheckedUpdateManyWithoutFileNestedInput = {
 }
 
 export type ProjectFileCreateWithoutProjectInput = {
+  version?: number
   file: Prisma.FileCreateNestedOneWithoutProjectsInput
 }
 
 export type ProjectFileUncheckedCreateWithoutProjectInput = {
   fileId: string
+  version?: number
 }
 
 export type ProjectFileCreateOrConnectWithoutProjectInput = {
@@ -556,14 +625,17 @@ export type ProjectFileScalarWhereInput = {
     | Prisma.ProjectFileScalarWhereInput[]
   projectId?: Prisma.StringFilter<'ProjectFile'> | string
   fileId?: Prisma.StringFilter<'ProjectFile'> | string
+  version?: Prisma.IntFilter<'ProjectFile'> | number
 }
 
 export type ProjectFileCreateWithoutFileInput = {
+  version?: number
   project: Prisma.ProjectCreateNestedOneWithoutFilesInput
 }
 
 export type ProjectFileUncheckedCreateWithoutFileInput = {
   projectId: string
+  version?: number
 }
 
 export type ProjectFileCreateOrConnectWithoutFileInput = {
@@ -611,34 +683,42 @@ export type ProjectFileUpdateManyWithWhereWithoutFileInput = {
 
 export type ProjectFileCreateManyProjectInput = {
   fileId: string
+  version?: number
 }
 
 export type ProjectFileUpdateWithoutProjectInput = {
+  version?: Prisma.IntFieldUpdateOperationsInput | number
   file?: Prisma.FileUpdateOneRequiredWithoutProjectsNestedInput
 }
 
 export type ProjectFileUncheckedUpdateWithoutProjectInput = {
   fileId?: Prisma.StringFieldUpdateOperationsInput | string
+  version?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type ProjectFileUncheckedUpdateManyWithoutProjectInput = {
   fileId?: Prisma.StringFieldUpdateOperationsInput | string
+  version?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type ProjectFileCreateManyFileInput = {
   projectId: string
+  version?: number
 }
 
 export type ProjectFileUpdateWithoutFileInput = {
+  version?: Prisma.IntFieldUpdateOperationsInput | number
   project?: Prisma.ProjectUpdateOneRequiredWithoutFilesNestedInput
 }
 
 export type ProjectFileUncheckedUpdateWithoutFileInput = {
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
+  version?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type ProjectFileUncheckedUpdateManyWithoutFileInput = {
   projectId?: Prisma.StringFieldUpdateOperationsInput | string
+  version?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type ProjectFileSelect<
@@ -648,6 +728,7 @@ export type ProjectFileSelect<
   {
     projectId?: boolean
     fileId?: boolean
+    version?: boolean
     project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
     file?: boolean | Prisma.FileDefaultArgs<ExtArgs>
   },
@@ -661,6 +742,7 @@ export type ProjectFileSelectCreateManyAndReturn<
   {
     projectId?: boolean
     fileId?: boolean
+    version?: boolean
     project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
     file?: boolean | Prisma.FileDefaultArgs<ExtArgs>
   },
@@ -674,6 +756,7 @@ export type ProjectFileSelectUpdateManyAndReturn<
   {
     projectId?: boolean
     fileId?: boolean
+    version?: boolean
     project?: boolean | Prisma.ProjectDefaultArgs<ExtArgs>
     file?: boolean | Prisma.FileDefaultArgs<ExtArgs>
   },
@@ -683,13 +766,14 @@ export type ProjectFileSelectUpdateManyAndReturn<
 export type ProjectFileSelectScalar = {
   projectId?: boolean
   fileId?: boolean
+  version?: boolean
 }
 
 export type ProjectFileOmit<
   ExtArgs extends runtime.Types.Extensions.InternalArgs =
     runtime.Types.Extensions.DefaultArgs,
 > = runtime.Types.Extensions.GetOmit<
-  'projectId' | 'fileId',
+  'projectId' | 'fileId' | 'version',
   ExtArgs['result']['projectFile']
 >
 export type ProjectFileInclude<
@@ -727,6 +811,7 @@ export type $ProjectFilePayload<
     {
       projectId: string
       fileId: string
+      version: number
     },
     ExtArgs['result']['projectFile']
   >
@@ -1352,6 +1437,7 @@ export interface Prisma__ProjectFileClient<
 export interface ProjectFileFieldRefs {
   readonly projectId: Prisma.FieldRef<'ProjectFile', 'String'>
   readonly fileId: Prisma.FieldRef<'ProjectFile', 'String'>
+  readonly version: Prisma.FieldRef<'ProjectFile', 'Int'>
 }
 
 // Custom InputTypes
