@@ -794,7 +794,10 @@ function MessageBubble({
   // Computed once per message render so all parts (and the footer) share
   // the same id→index mapping.
   const citations = useMemo(
-    () => (isUser ? new Map<string, IndexedCitation>() : collectCitationsFromMessage(message)),
+    () =>
+      isUser
+        ? new Map<string, IndexedCitation>()
+        : collectCitationsFromMessage(message),
     [message, isUser],
   )
   return (
@@ -895,7 +898,7 @@ function MessagePart({
     )
   }
 
-  if (part.type === 'reasoning') {
+  if (part.type === 'reasoning' && part.text.length > 0) {
     return (
       <details className="text-xs text-[var(--sea-ink-soft)]">
         <summary className="cursor-pointer">Reasoning</summary>

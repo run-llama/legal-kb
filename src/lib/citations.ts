@@ -15,6 +15,24 @@
 import { isToolUIPart } from 'ai'
 import type { UIMessage, UIMessagePart, UIDataTypes, UITools } from 'ai'
 
+/** A single attachment pointer the /api/attachment proxy can fetch. */
+export type AttachmentRef = {
+  /** Attachment-relative path, e.g. "screenshots/page_7.jpg". */
+  name: string
+  /** source_id required for the attachments endpoint. */
+  sourceId: string
+}
+
+/** One page of a multi-page citation: screenshot + matching items JSON. */
+export type CitationPage = {
+  /** 1-indexed page number, parsed from the attachment_name. */
+  page: number
+  /** Page screenshot attachment, if available. */
+  screenshot: AttachmentRef | null
+  /** Layout/items JSON attachment for this page, if available. */
+  items: AttachmentRef | null
+}
+
 /** A single retrievable source we can show the user. */
 export type Citation = {
   /** Short stable id the model uses to reference this citation inline. */
@@ -26,26 +44,28 @@ export type Citation = {
   /** Page range covered by this chunk, if known. */
   pageStart: number | null
   pageEnd: number | null
-  /** Page screenshot attachment, if any. */
-  attachment: {
-    /** e.g. "screenshots/page_7.jpg" — the attachment_name from LlamaCloud. */
-    name: string
-    /** source_id required for the attachments endpoint. */
-    sourceId: string
-  } | null
   /**
-   * Layout/items JSON attachment, if any. We use this to overlay bbox
-   * highlights on top of the screenshot showing exactly which paragraph
-   * was cited.
+   * One entry per page covered by the chunk, sorted by page number.
+   * A chunk that spans pages 4–6 has three entries here, each with its
+   * own screenshot + items JSON.
    */
-  itemsAttachment: {
-    name: string
-    sourceId: string
-  } | null
+  pages: CitationPage[]
   /** Trimmed preview of the chunk text — shown under the screenshot. */
   preview: string
   /** Relevance score (rerank if present, else hybrid). */
   score: number | null
+}
+
+/**
+ * Pull the 1-indexed page number out of an attachment name like
+ * "screenshots/page_7.jpg" or "items/page_12.json". Returns null if the
+ * name doesn't follow the expected pattern.
+ */
+export function parsePageNumber(attachmentName: string): number | null {
+  const m = attachmentName.match(/page_(\d+)/i)
+  if (!m) return null
+  const n = parseInt(m[1], 10)
+  return Number.isFinite(n) ? n : null
 }
 
 /**
@@ -105,7 +125,7 @@ export function collectCitations(
     if (!Array.isArray(citations)) continue
     for (const c of citations) {
       if (!c || typeof c !== 'object') continue
-      const cand = c as Partial<Citation>
+      const cand = c as Record<string, unknown>
       if (typeof cand.id !== 'string') continue
       if (out.has(cand.id)) continue
       out.set(cand.id, {
@@ -114,30 +134,7 @@ export function collectCitations(
         fileId: typeof cand.fileId === 'string' ? cand.fileId : '',
         pageStart: typeof cand.pageStart === 'number' ? cand.pageStart : null,
         pageEnd: typeof cand.pageEnd === 'number' ? cand.pageEnd : null,
-        attachment:
-          cand.attachment &&
-          typeof cand.attachment === 'object' &&
-          typeof (cand.attachment as { name?: unknown }).name === 'string' &&
-          typeof (cand.attachment as { sourceId?: unknown }).sourceId ===
-            'string'
-            ? {
-                name: (cand.attachment as { name: string }).name,
-                sourceId: (cand.attachment as { sourceId: string }).sourceId,
-              }
-            : null,
-        itemsAttachment:
-          cand.itemsAttachment &&
-          typeof cand.itemsAttachment === 'object' &&
-          typeof (cand.itemsAttachment as { name?: unknown }).name ===
-            'string' &&
-          typeof (cand.itemsAttachment as { sourceId?: unknown }).sourceId ===
-            'string'
-            ? {
-                name: (cand.itemsAttachment as { name: string }).name,
-                sourceId: (cand.itemsAttachment as { sourceId: string })
-                  .sourceId,
-              }
-            : null,
+        pages: parsePagesField(cand),
         preview: typeof cand.preview === 'string' ? cand.preview : '',
         score: typeof cand.score === 'number' ? cand.score : null,
         index: nextIndex++,
@@ -152,4 +149,58 @@ export function collectCitationsFromMessage(
   message: UIMessage,
 ): Map<string, IndexedCitation> {
   return collectCitations(message.parts)
+}
+
+// ---------- internal: parse the `pages` field defensively ----------
+
+/**
+ * Coerce a raw Citation-shaped object into a CitationPage[]. Handles
+ * three shapes:
+ *   - new shape with `pages: CitationPage[]`
+ *   - old single-page shape with `attachment` + `itemsAttachment`
+ *     (pre-multi-page persisted messages)
+ *   - missing/garbage — returns []
+ * Always returns the array sorted by page number ascending.
+ */
+function parsePagesField(cand: Record<string, unknown>): CitationPage[] {
+  const out: CitationPage[] = []
+
+  // New shape.
+  if (Array.isArray(cand.pages)) {
+    for (const p of cand.pages) {
+      if (!p || typeof p !== 'object') continue
+      const pp = p as Record<string, unknown>
+      const page = typeof pp.page === 'number' ? pp.page : null
+      if (page == null) continue
+      out.push({
+        page,
+        screenshot: parseAttachmentRef(pp.screenshot),
+        items: parseAttachmentRef(pp.items),
+      })
+    }
+  } else {
+    // Old shape: synthesize a single CitationPage from `attachment` +
+    // `itemsAttachment`. We don't always know the page number here, so
+    // fall back to pageStart, then to 0 (will sort first, label "—").
+    const screenshot = parseAttachmentRef(cand.attachment)
+    const items = parseAttachmentRef(cand.itemsAttachment)
+    if (screenshot || items) {
+      const name = screenshot?.name ?? items?.name ?? ''
+      const inferred = parsePageNumber(name)
+      const page =
+        inferred ??
+        (typeof cand.pageStart === 'number' ? cand.pageStart : 0)
+      out.push({ page, screenshot, items })
+    }
+  }
+
+  out.sort((a, b) => a.page - b.page)
+  return out
+}
+
+function parseAttachmentRef(raw: unknown): AttachmentRef | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.name !== 'string' || typeof r.sourceId !== 'string') return null
+  return { name: r.name, sourceId: r.sourceId }
 }

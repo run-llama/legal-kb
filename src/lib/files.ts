@@ -145,6 +145,7 @@ export async function uploadFile(input: UploadFileInput) {
     // The SDK accepts a web File; Buffer must be wrapped.
     upload_file: new File([new Uint8Array(input.data)], input.name),
     project_id: llamacloudProjectId,
+    metadata: JSON.stringify({ file_name: input.name }),
   })
   const cloudFileId = uploaded.id
 

@@ -166,7 +166,7 @@ export function findCitedBoxes(
   previewText: string,
   options: { threshold?: number; maxBoxes?: number } = {},
 ): NormBox[] {
-  const threshold = options.threshold ?? 0.35
+  const threshold = options.threshold ?? 0.5
   const maxBoxes = options.maxBoxes ?? 32
   const preview = previewText.trim()
   if (!preview) return []
@@ -181,7 +181,7 @@ export function findCitedBoxes(
     if (!Array.isArray(item.bbox) || item.bbox.length === 0) continue
     // For very short items (titles), require a stricter match so we
     // don't light up every header on the page that shares a few words.
-    const minScore = text.length < 40 ? Math.max(threshold, 0.6) : threshold
+    const minScore = text.length < 40 ? Math.max(threshold, 0.8) : threshold
     const score = trigramOverlap(preview, text)
     if (score >= minScore) matches.push({ score, boxes: item.bbox })
   }

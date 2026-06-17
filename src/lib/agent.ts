@@ -1,10 +1,52 @@
 import { LlamaCloud } from '@llamaindex/llama-cloud'
 import { tool, ToolLoopAgent } from 'ai'
+import type { ProviderOptions } from '@ai-sdk/provider-utils'
 import { z } from 'zod'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import type { Citation } from './citations'
-import { makeCitationId } from './citations'
+import type { Citation, CitationPage } from './citations'
+import { makeCitationId, parsePageNumber } from './citations'
+
+/**
+ * Turn LlamaCloud's flat `attachments` array into a per-page list. We
+ * pair `screenshots/page_N.jpg` with `items/page_N.json` by parsing the
+ * page number out of the filename. Items without a parseable page
+ * number are skipped (they're typically global-doc attachments that we
+ * don't render in the citation modal). Sorted ascending by page.
+ */
+function buildCitationPages(
+  attachments: ReadonlyArray<{
+    type: string
+    attachment_name: string
+    source_id: string
+  }>,
+): CitationPage[] {
+  const byPage = new Map<number, CitationPage>()
+  const ensure = (page: number): CitationPage => {
+    let p = byPage.get(page)
+    if (!p) {
+      p = { page, screenshot: null, items: null }
+      byPage.set(page, p)
+    }
+    return p
+  }
+  for (const a of attachments) {
+    const page = parsePageNumber(a.attachment_name)
+    if (page == null) continue
+    const ref = { name: a.attachment_name, sourceId: a.source_id }
+    if (a.type === 'screenshot') {
+      ensure(page).screenshot = ref
+    } else if (
+      a.type === 'items' ||
+      (a.type !== 'screenshot' && a.attachment_name.endsWith('.json'))
+    ) {
+      // Accept either an explicit 'items' type or, as a fallback, any
+      // non-screenshot attachment whose filename ends in .json.
+      ensure(page).items = ref
+    }
+  }
+  return [...byPage.values()].sort((a, b) => a.page - b.page)
+}
 
 function createLlamaParseTools(
   llamaCloudApiKey: string,
@@ -69,16 +111,25 @@ function createLlamaParseTools(
       const citations: Citation[] = []
       for (let i = 0; i < response.results.length; i++) {
         const result = response.results[i]
+        let excludeCitation = false
+        const rerankScore = result.rerank_score ?? null
+        if (rerankScore && rerankScore < 0.35) {
+          excludeCitation = true
+        }
+        if (!rerankScore) {
+          const hybridScore = result.score ?? null
+          if (hybridScore) {
+            // normalized = RRF / (2 / (k + 1)), and k is 60
+            const normalizedScore = hybridScore / (2 / 61)
+            if (normalizedScore < 0.35) {
+              excludeCitation = true
+            }
+          }
+        }
         const sf = result.static_fields ?? {}
         const meta = (result.metadata ?? {}) as Record<string, unknown>
         const fileName =
-          typeof meta.file_name === 'string'
-            ? meta.file_name
-            : typeof meta.filename === 'string'
-              ? meta.filename
-              : typeof meta.source === 'string'
-                ? meta.source
-                : 'unknown file'
+          typeof meta.file_name === 'string' ? meta.file_name : 'unknown file'
         const fileId =
           typeof sf.parsed_directory_file_id === 'string'
             ? sf.parsed_directory_file_id
@@ -86,41 +137,25 @@ function createLlamaParseTools(
               ? meta.file_id
               : ''
         const attachments = sf.attachments ?? []
-        const screenshot = attachments.find((a) => a.type === 'screenshot')
-        // 'items' (or any non-screenshot type pointing at a JSON layout
-        // file) carries the per-page bbox tree. The type label has been
-        // 'items' in practice; we also accept names that end in .json as a
-        // fallback in case the type label changes.
-        const items =
-          attachments.find((a) => a.type === 'items') ??
-          attachments.find(
-            (a) => a.type !== 'screenshot' && a.attachment_name.endsWith('.json'),
-          )
+        // A chunk that spans pages 4–6 has multiple screenshot + items
+        // attachments — one pair per page. Pair them up by page number.
+        const pages: CitationPage[] = buildCitationPages(attachments)
 
         const id = makeCitationId()
-        const preview = result.content.slice(0, 240)
+        const preview = result.content.slice(0, 500)
 
-        citations.push({
-          id,
-          fileName,
-          fileId,
-          pageStart: sf.page_range_start ?? null,
-          pageEnd: sf.page_range_end ?? null,
-          attachment: screenshot
-            ? {
-                name: screenshot.attachment_name,
-                sourceId: screenshot.source_id,
-              }
-            : null,
-          itemsAttachment: items
-            ? {
-                name: items.attachment_name,
-                sourceId: items.source_id,
-              }
-            : null,
-          preview,
-          score: result.rerank_score ?? result.score ?? null,
-        })
+        if (!excludeCitation) {
+          citations.push({
+            id,
+            fileName,
+            fileId,
+            pageStart: sf.page_range_start ?? null,
+            pageEnd: sf.page_range_end ?? null,
+            pages,
+            preview,
+            score: result.rerank_score ?? result.score ?? null,
+          })
+        }
 
         // Format for the model. Include the citation id so the model can
         // reference it inline.
@@ -281,6 +316,38 @@ function modelToProvider(
   throw new Error(`Unsupported model: ${model}`)
 }
 
+/**
+ * Build per-provider options that turn on reasoning streaming. Without
+ * these, GPT-5 / Claude 4 will not emit reasoning parts even though both
+ * are reasoning-capable. The AI SDK's UI message stream forwards
+ * reasoning by default (sendReasoning defaults to true), so all we need
+ * to do is ask the provider to produce it.
+ */
+function reasoningProviderOptions(model: string): ProviderOptions {
+  if (model.startsWith('anthropic/')) {
+    // Claude 4 family: extended thinking. Adaptive lets the model decide
+    // how much to think; 'summarized' display gives us a streamable
+    // reasoning text without exposing raw thinking tokens.
+    return {
+      anthropic: {
+        thinking: { type: 'adaptive', display: 'summarized' },
+      },
+    }
+  }
+  if (model.startsWith('openai/')) {
+    // GPT-5 family is a reasoning model. 'medium' effort is a sensible
+    // default; 'auto' summary asks OpenAI to stream a human-readable
+    // summary of the chain-of-thought.
+    return {
+      openai: {
+        reasoningEffort: 'medium',
+        reasoningSummary: 'auto',
+      },
+    }
+  }
+  return {}
+}
+
 export function buildAgent(
   model: string,
   llamaCloudApiKey: string,
@@ -292,6 +359,7 @@ export function buildAgent(
   const resolvedProvider = modelToProvider(model, anthropicKey, openaiKey)
   return new ToolLoopAgent({
     model: resolvedProvider,
+    providerOptions: reasoningProviderOptions(model),
     tools: createLlamaParseTools(
       llamaCloudApiKey,
       llamaCloudProjectId,
