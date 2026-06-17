@@ -79,7 +79,7 @@ function buildCitationPages(
 }
 
 /** Get the output directory ID given an Index */
-async function getOutputDirectoryId(
+export async function getOutputDirectoryId(
   indexId: string,
   apiKey: string,
   maxRetries = 3,

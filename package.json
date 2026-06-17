@@ -41,6 +41,7 @@
     "ai": "^6.0.199",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fflate": "^0.8.3",
     "lucide-react": "^0.577.0",
     "nitro": "npm:nitro-nightly@latest",
     "prisma": "^7.4.2",
