@@ -70,6 +70,40 @@ async function assertFileOwned(
   if (!file) throw new Error('file not found for this user')
 }
 
+// ---------- versioning ----------
+
+/**
+ * Compute the next version number for a file with `name` inside
+ * `projectId`. Versioning is scoped to the (project, original filename)
+ * pair: re-uploading "contract.pdf" to the same project produces v1,
+ * v2, v3 alongside each other. Returns 1 if no prior version exists.
+ *
+ * NOTE: This is not strictly race-free. Two simultaneous uploads of the
+ * same filename to the same project could both observe `max = 1` and
+ * both pick version 2. Mitigations:
+ *   - The UI uploads sequentially (see onFilesChosen in projects.tsx).
+ *   - Even if a duplicate version slips through, both rows are still
+ *     valid (no DB unique constraint on version); the retrieval layer
+ *     will just see two chunks tagged version=2, which is degraded but
+ *     not broken.
+ * If concurrent re-uploads become common, the right fix is a Postgres
+ * advisory lock keyed on (projectId, name) around the whole upload.
+ */
+async function nextVersionForName(args: {
+  projectId: string
+  name: string
+}): Promise<number> {
+  const top = await prisma.projectFile.findFirst({
+    where: {
+      projectId: args.projectId,
+      file: { name: args.name },
+    },
+    orderBy: { version: 'desc' },
+    select: { version: true },
+  })
+  return (top?.version ?? 0) + 1
+}
+
 // ---------- LlamaCloud helpers ----------
 
 type UserKeys = {
@@ -92,7 +126,7 @@ async function getUserLlamaCloudKeys(userId: string): Promise<UserKeys> {
 }
 
 /** Resolve the source directory ID backing a project's index. */
-async function getSourceDirectoryId(
+export async function getSourceDirectoryId(
   client: LlamaCloud,
   indexId: string,
 ): Promise<string> {
@@ -140,12 +174,24 @@ export async function uploadFile(input: UploadFileInput) {
   })
   const sourceDirId = await getSourceDirectoryId(client, project.indexId)
 
-  // 1. Upload bytes to LlamaCloud.
+  // Decide the version for this upload. Versions are per (projectId,
+  // file.name): re-uploading "nda.pdf" to the same project bumps the
+  // version, while uploading it to a different project starts at v1.
+  // We resolve this BEFORE the upload so the metadata we send to
+  // LlamaCloud already carries the correct version.
+  const version = await nextVersionForName({
+    projectId: project.id,
+    name: input.name,
+  })
+
+  // 1. Upload bytes to LlamaCloud. The `version` field in metadata is
+  // what the retrieval layer filters on. `file_name` stays for display.
   const uploaded = await client.beta.directories.files.upload(sourceDirId, {
     // The SDK accepts a web File; Buffer must be wrapped.
     upload_file: new File([new Uint8Array(input.data)], input.name),
     project_id: llamacloudProjectId,
-    metadata: JSON.stringify({ file_name: input.name }),
+    metadata: JSON.stringify({ file_name: input.name, version }),
+    unique_id: `${input.name}-${version}`,
   })
   const cloudFileId = uploaded.id
 
@@ -163,7 +209,7 @@ export async function uploadFile(input: UploadFileInput) {
         },
       })
       await tx.projectFile.create({
-        data: { projectId: project.id, fileId: created.id },
+        data: { projectId: project.id, fileId: created.id, version },
       })
       return created
     })
@@ -339,7 +385,11 @@ export async function deleteFile(input: DeleteFileInput) {
 
 // ---------- reads ----------
 
-/** All files attached to a given project (newest first). */
+/**
+ * All files attached to a given project (newest first). The returned
+ * objects are File rows plus the project-scoped `version` taken from
+ * the ProjectFile link.
+ */
 export async function getProjectFiles(userId: string, projectId: string) {
   await assertProjectOwned(prisma, userId, projectId)
 
@@ -348,7 +398,7 @@ export async function getProjectFiles(userId: string, projectId: string) {
     include: { file: true },
     orderBy: { file: { createdAt: 'desc' } },
   })
-  return rows.map((r) => r.file)
+  return rows.map((r) => ({ ...r.file, version: r.version }))
 }
 
 /** Every file the user owns, with the projects each is attached to. */

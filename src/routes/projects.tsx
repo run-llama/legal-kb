@@ -726,9 +726,17 @@ function FileRow({
   return (
     <li className="flex items-center justify-between gap-3 border border-[var(--line)] rounded-lg px-3 py-2">
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-sm font-medium text-[var(--sea-ink)] truncate">
-          {file.name}
-        </p>
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="m-0 text-sm font-medium text-[var(--sea-ink)] truncate">
+            {file.name}
+          </p>
+          <span
+            className="shrink-0 text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded-full bg-[var(--lagoon-deep)]/10 text-[var(--lagoon-deep)]"
+            title={`Version ${file.version} of this filename in this project`}
+          >
+            v{file.version}
+          </span>
+        </div>
         <p className="m-0 text-xs text-[var(--sea-ink-soft)] font-mono">
           {formatBytes(file.size)} · {file.mimeType} ·{' '}
           {new Date(file.createdAt).toLocaleDateString()}

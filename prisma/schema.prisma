@@ -53,6 +53,12 @@ model File {
 model ProjectFile {
   projectId String  @map("project_id")
   fileId    String  @map("file_id")
+  // Monotonically increasing version per (projectId, file.name). The
+  // first upload of "nda.pdf" to a project is v1, the second is v2, etc.
+  // Stored on the link rather than on File because the same File row
+  // could in principle be linked to multiple projects with different
+  // version numbers in each.
+  version   Int     @default(1)
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   file      File    @relation(fields: [fileId], references: [id], onDelete: Restrict)
 

@@ -101,7 +101,7 @@ function CitationModal({
           <div className="min-w-0">
             <p className="island-kicker m-0 mb-1">Citation #{citation.index}</p>
             <h3 className="m-0 text-sm font-semibold text-[var(--sea-ink)] truncate">
-              {citation.fileName || 'Unknown file'}
+              {citation.fileName || 'Unknown file'} {`(v${citation.version})`}
             </h3>
             {pageLabel && (
               <p className="m-0 mt-0.5 text-xs text-[var(--sea-ink-soft)]">
