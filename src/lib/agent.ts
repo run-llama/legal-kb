@@ -1,8 +1,52 @@
 import { LlamaCloud } from '@llamaindex/llama-cloud'
 import { tool, ToolLoopAgent } from 'ai'
+import type { ProviderOptions } from '@ai-sdk/provider-utils'
 import { z } from 'zod'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import type { Citation, CitationPage } from './citations'
+import { makeCitationId, parsePageNumber } from './citations'
+
+/**
+ * Turn LlamaCloud's flat `attachments` array into a per-page list. We
+ * pair `screenshots/page_N.jpg` with `items/page_N.json` by parsing the
+ * page number out of the filename. Items without a parseable page
+ * number are skipped (they're typically global-doc attachments that we
+ * don't render in the citation modal). Sorted ascending by page.
+ */
+function buildCitationPages(
+  attachments: ReadonlyArray<{
+    type: string
+    attachment_name: string
+    source_id: string
+  }>,
+): CitationPage[] {
+  const byPage = new Map<number, CitationPage>()
+  const ensure = (page: number): CitationPage => {
+    let p = byPage.get(page)
+    if (!p) {
+      p = { page, screenshot: null, items: null }
+      byPage.set(page, p)
+    }
+    return p
+  }
+  for (const a of attachments) {
+    const page = parsePageNumber(a.attachment_name)
+    if (page == null) continue
+    const ref = { name: a.attachment_name, sourceId: a.source_id }
+    if (a.type === 'screenshot') {
+      ensure(page).screenshot = ref
+    } else if (
+      a.type === 'items' ||
+      (a.type !== 'screenshot' && a.attachment_name.endsWith('.json'))
+    ) {
+      // Accept either an explicit 'items' type or, as a fallback, any
+      // non-screenshot attachment whose filename ends in .json.
+      ensure(page).items = ref
+    }
+  }
+  return [...byPage.values()].sort((a, b) => a.page - b.page)
+}
 
 function createLlamaParseTools(
   llamaCloudApiKey: string,
@@ -10,7 +54,11 @@ function createLlamaParseTools(
   indexId: string,
 ) {
   const getClient = () => {
-    return new LlamaCloud({ apiKey: llamaCloudApiKey })
+    return new LlamaCloud({
+      apiKey: llamaCloudApiKey,
+      baseURL:
+        process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+    })
   }
 
   const getProjectId = () => {
@@ -20,7 +68,12 @@ function createLlamaParseTools(
   const retrieve = tool({
     description:
       'Run a semantic retrieval query against an index. ' +
-      'Returns a formatted string of results with scores, content previews, and metadata.',
+      'Returns { formatted, citations }. The `formatted` field is a human-' +
+      'readable list of retrieved chunks (use this as your primary signal). ' +
+      'The `citations` field gives each chunk a short id (e.g. "c7f2qa") ' +
+      'and the metadata you need to cite it. Reference an id inline using ' +
+      'backtick-wrapped tokens like `cite:c7f2qa` to surface a clickable ' +
+      'citation chip in the UI.',
     inputSchema: z.object({
       query: z.string().describe('The search query string.'),
       top_k: z
@@ -51,20 +104,85 @@ function createLlamaParseTools(
             ? { enabled: true, top_n: rerank_top_n }
             : undefined,
       })
-      const retrieved: string[] = []
+
+      // Build both a human/model-readable formatted string AND a structured
+      // citations array that the UI uses to render visual citation chips.
+      const formattedParts: string[] = []
+      const citations: Citation[] = []
       for (let i = 0; i < response.results.length; i++) {
         const result = response.results[i]
-        let r = `Retrieval result #${i + 1} (Score: ${result.score ?? 'NA'})\n${result.content.slice(
-          0,
-          200,
-        )}\n`
-        if (result.metadata) {
-          r += `Metadata:\n\n\`\`\`json\n${JSON.stringify(result.metadata, null, 2)}\n`
+        let excludeCitation = false
+        const rerankScore = result.rerank_score ?? null
+        if (rerankScore && rerankScore < 0.35) {
+          excludeCitation = true
         }
-        r += '\n\n---\n\n'
-        retrieved.push(r)
+        if (!rerankScore) {
+          const hybridScore = result.score ?? null
+          if (hybridScore) {
+            // normalized = RRF / (2 / (k + 1)), and k is 60
+            const normalizedScore = hybridScore / (2 / 61)
+            if (normalizedScore < 0.35) {
+              excludeCitation = true
+            }
+          }
+        }
+        const sf = result.static_fields ?? {}
+        const meta = (result.metadata ?? {}) as Record<string, unknown>
+        const fileName =
+          typeof meta.file_name === 'string' ? meta.file_name : 'unknown file'
+        const fileId =
+          typeof sf.parsed_directory_file_id === 'string'
+            ? sf.parsed_directory_file_id
+            : typeof meta.file_id === 'string'
+              ? meta.file_id
+              : ''
+        const attachments = sf.attachments ?? []
+        // A chunk that spans pages 4–6 has multiple screenshot + items
+        // attachments — one pair per page. Pair them up by page number.
+        const pages: CitationPage[] = buildCitationPages(attachments)
+
+        const id = makeCitationId()
+        const preview = result.content.slice(0, 500)
+
+        if (!excludeCitation) {
+          citations.push({
+            id,
+            fileName,
+            fileId,
+            pageStart: sf.page_range_start ?? null,
+            pageEnd: sf.page_range_end ?? null,
+            pages,
+            preview,
+            score: result.rerank_score ?? result.score ?? null,
+          })
+        }
+
+        // Format for the model. Include the citation id so the model can
+        // reference it inline.
+        let r =
+          `### Result #${i + 1} — \`cite:${id}\` ` +
+          `(score: ${(result.rerank_score ?? result.score ?? 0).toFixed(3)}, ` +
+          `file: ${fileName}` +
+          (sf.page_range_start != null
+            ? `, p.${sf.page_range_start}` +
+              (sf.page_range_end && sf.page_range_end !== sf.page_range_start
+                ? `–${sf.page_range_end}`
+                : '')
+            : '') +
+          `)\n\n${result.content.slice(0, 600)}`
+        if (Object.keys(meta).length > 0) {
+          r +=
+            `\n\nMetadata:\n\`\`\`json\n` +
+            JSON.stringify(meta, null, 2) +
+            `\n\`\`\``
+        }
+        formattedParts.push(r)
       }
-      return retrieved.join('\n\n')
+
+      return {
+        formatted: formattedParts.join('\n\n---\n\n'),
+        citations,
+      }
     },
   })
 
@@ -198,6 +316,38 @@ function modelToProvider(
   throw new Error(`Unsupported model: ${model}`)
 }
 
+/**
+ * Build per-provider options that turn on reasoning streaming. Without
+ * these, GPT-5 / Claude 4 will not emit reasoning parts even though both
+ * are reasoning-capable. The AI SDK's UI message stream forwards
+ * reasoning by default (sendReasoning defaults to true), so all we need
+ * to do is ask the provider to produce it.
+ */
+function reasoningProviderOptions(model: string): ProviderOptions {
+  if (model.startsWith('anthropic/')) {
+    // Claude 4 family: extended thinking. Adaptive lets the model decide
+    // how much to think; 'summarized' display gives us a streamable
+    // reasoning text without exposing raw thinking tokens.
+    return {
+      anthropic: {
+        thinking: { type: 'adaptive', display: 'summarized' },
+      },
+    }
+  }
+  if (model.startsWith('openai/')) {
+    // GPT-5 family is a reasoning model. 'medium' effort is a sensible
+    // default; 'auto' summary asks OpenAI to stream a human-readable
+    // summary of the chain-of-thought.
+    return {
+      openai: {
+        reasoningEffort: 'medium',
+        reasoningSummary: 'auto',
+      },
+    }
+  }
+  return {}
+}
+
 export function buildAgent(
   model: string,
   llamaCloudApiKey: string,
@@ -209,6 +359,7 @@ export function buildAgent(
   const resolvedProvider = modelToProvider(model, anthropicKey, openaiKey)
   return new ToolLoopAgent({
     model: resolvedProvider,
+    providerOptions: reasoningProviderOptions(model),
     tools: createLlamaParseTools(
       llamaCloudApiKey,
       llamaCloudProjectId,
@@ -229,6 +380,26 @@ export function buildAgent(
     - Use \`readFile\` to read a full document or a specific section when precision is needed.
     - Use \`grepFile\` to locate specific clauses, terms, or patterns within a known document.
     - Prefer chaining tools: retrieve to find candidates, then readFile or grepFile to confirm exact wording.
+
+    ## Citations (very important)
+    The \`retrieve\` tool returns a list of results, each with a short id
+    (e.g. "c7f2qa"). When you state a fact that comes from a specific
+    result, append a citation marker immediately after the sentence using
+    inline code with the prefix "cite:", like this:
+
+        The contract terminates after 12 months \`cite:c7f2qa\`.
+
+    Rules:
+    - Only cite ids that appeared in a \`retrieve\` tool result during
+      THIS turn. Never invent ids; never reuse ids across turns.
+    - Cite at the END of the sentence (or clause) the fact came from, not
+      at the start.
+    - If multiple results support the same fact, cite all of them in a
+      row: \`cite:c7f2qa\` \`cite:cf8ab1\`.
+    - Do NOT cite for paraphrased general knowledge or for opinions —
+      only for facts you took from a specific retrieved chunk.
+    - Do NOT add a separate "Sources" section at the end; the UI already
+      shows a list of all cited sources below the answer.
 
     ## Boundaries
     - Do not answer questions that are not grounded in the indexed documents.

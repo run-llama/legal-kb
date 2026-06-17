@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useAuth } from '@workos-inc/authkit-react'
 import { createServerFn } from '@tanstack/react-start'
@@ -518,6 +518,30 @@ function ProjectFiles({
   const statusKey = ['index-status', projectId] as const
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Terminal states: polling can safely stop here. Anything else —
+  // including 'syncing', 'pending', 'running', 'exporting', and any
+  // future LlamaCloud state we don't know about — keeps polling.
+  const TERMINAL_STATUSES = new Set(['ready', 'failed', 'error'])
+
+  // After we trigger an action that should kick off a sync (upload,
+  // detach, sync), we force-poll for a short window even if the server
+  // still reports 'ready'. LlamaCloud takes a beat to register the new
+  // job, and without this bridge the very first refetch can see 'ready'
+  // and shut polling off forever. `forceUntil` is a timestamp in ms.
+  const [forceUntil, setForceUntil] = useState(0)
+  const beginForcePolling = () => {
+    setForceUntil(Date.now() + 6000)
+  }
+  // While inside the force window, tick state so refetchInterval
+  // re-evaluates and we get a clean stop at the boundary.
+  useEffect(() => {
+    if (forceUntil === 0) return
+    const remaining = forceUntil - Date.now()
+    if (remaining <= 0) return
+    const t = setTimeout(() => setForceUntil(0), remaining)
+    return () => clearTimeout(t)
+  }, [forceUntil])
+
   const {
     data: files,
     isLoading,
@@ -530,12 +554,15 @@ function ProjectFiles({
   const { data: status } = useQuery({
     queryKey: statusKey,
     queryFn: () => indexStatusFn({ data: { userId, projectId } }),
-    // Poll while syncing; stop when idle. 2s mirrors the SDK example.
+    // Poll unless we've reached a terminal state. Also force-poll for a
+    // short window after a user action that should trigger a sync, to
+    // bridge the time between "client clicked sync" and "LlamaCloud has
+    // actually flipped the status to syncing".
     refetchInterval: (q) => {
       const s = (q.state.data as { status?: string } | undefined)?.status
-      return s === 'syncing' || s === 'pending' || s === 'running'
-        ? 2000
-        : false
+      if (Date.now() < forceUntil) return 2000
+      if (!s || s === 'unknown') return false
+      return TERMINAL_STATUSES.has(s) ? false : 2000
     },
   })
 
@@ -550,6 +577,7 @@ function ProjectFiles({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: filesKey })
       queryClient.invalidateQueries({ queryKey: statusKey })
+      beginForcePolling()
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
   })
@@ -560,6 +588,7 @@ function ProjectFiles({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: filesKey })
       queryClient.invalidateQueries({ queryKey: statusKey })
+      beginForcePolling()
     },
   })
 
@@ -567,6 +596,7 @@ function ProjectFiles({
     mutationFn: () => syncProjectFn({ data: { userId, projectId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: statusKey })
+      beginForcePolling()
     },
   })
 
