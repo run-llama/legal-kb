@@ -458,7 +458,7 @@ export async function buildProjectZip(
   // Ownership + project name (used in the zip filename).
   const project = await prisma.project.findFirst({
     where: { id: projectId, userId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, indexId: true },
   })
   if (!project) throw new Error('project not found for this user')
 
@@ -484,6 +484,8 @@ export async function buildProjectZip(
     version: l.version,
     archiveName: archiveNameFor(l.file.name, l.version),
   }))
+
+  const sourceDirId = await getSourceDirectoryId(client, project.indexId)
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -512,7 +514,16 @@ export async function buildProjectZip(
 
           // 1. Resolve presigned URL. `expires_at_seconds` defaults to a
           // few minutes, which is plenty for a single file pull.
-          const presigned = await client.files.get(entry.fileId, {
+          const fl = await client.beta.directories.files.get(entry.fileId, {
+            project_id: llamacloudProjectId,
+            directory_id: sourceDirId,
+          })
+
+          if (!fl.file_id) {
+            throw new Error(`No file ID associated with directory file`)
+          }
+
+          const presigned = await client.files.get(fl.file_id, {
             project_id: llamacloudProjectId,
           })
 
