@@ -16,6 +16,7 @@
 //   - We mirror LlamaCloud's file_id as File.id in our DB so the two systems stay aligned.
 
 import LlamaCloud from '@llamaindex/llama-cloud'
+import { Zip, ZipPassThrough } from 'fflate'
 import { prisma } from '../db'
 import { decrypt } from './crypto'
 
@@ -418,6 +419,192 @@ export async function getFile(userId: string, fileId: string) {
     where: { id: fileId, userId },
     include: { projects: { select: { projectId: true } } },
   })
+}
+
+// ---------- streaming project download (zip) ----------
+
+/**
+ * Build a streaming ZIP of every file attached to a project. Returns a
+ * `ReadableStream<Uint8Array>` ready to be used as a Response body, plus
+ * a suggested filename for the Content-Disposition header.
+ *
+ * Files are fetched sequentially from LlamaCloud's presigned-URL S3
+ * endpoints and piped through `fflate.Zip` with `ZipPassThrough` (no
+ * recompression). Reasoning:
+ *   - Legal docs are typically PDFs / DOCX, which are already compressed.
+ *     DEFLATE-ing them is CPU spend for ~0% size reduction.
+ *   - Sequential fetches keep memory and outbound connection count
+ *     bounded; legal projects rarely have hundreds of files.
+ *   - Streaming means the user starts downloading bytes immediately,
+ *     even for projects with many files, and we never buffer a whole
+ *     file in memory.
+ *
+ * Filenames inside the zip are disambiguated when the project contains
+ * multiple versions of the same name: `nda.pdf` -> `nda.pdf`,
+ * `nda__v2.pdf`, `nda__v3.pdf`, etc. v1 keeps the bare filename so a
+ * single-version project produces clean names.
+ *
+ * If the caller aborts the response (browser cancels the download), pass
+ * its `AbortSignal` through `opts.signal` so upstream fetches stop too.
+ */
+export async function buildProjectZip(
+  userId: string,
+  projectId: string,
+  opts: { signal?: AbortSignal } = {},
+): Promise<{ stream: ReadableStream<Uint8Array>; filename: string }> {
+  const { llamacloudKey, llamacloudProjectId } =
+    await getUserLlamaCloudKeys(userId)
+
+  // Ownership + project name (used in the zip filename).
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, userId },
+    select: { id: true, name: true, indexId: true },
+  })
+  if (!project) throw new Error('project not found for this user')
+
+  // Pull every (file, version) pair for the project. We rely on the DB
+  // row, not LlamaCloud, as the source of truth for what's in scope.
+  const links = await prisma.projectFile.findMany({
+    where: { projectId },
+    include: { file: true },
+    orderBy: [{ file: { name: 'asc' } }, { version: 'asc' }],
+  })
+
+  const client = new LlamaCloud({
+    apiKey: llamacloudKey,
+    baseURL:
+      process.env.LLAMA_CLOUD_BASE_URL ?? 'https://api.cloud.llamaindex.ai',
+  })
+
+  // Build a per-file display name: bump duplicates as name__v<N>.<ext>.
+  // We compute it up front so the user gets a stable mapping even before
+  // we touch S3.
+  const entries = links.map((l) => ({
+    fileId: l.file.id,
+    version: l.version,
+    archiveName: archiveNameFor(l.file.name, l.version),
+  }))
+
+  const sourceDirId = await getSourceDirectoryId(client, project.indexId)
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      // Bridge fflate's callback API to the ReadableStream controller.
+      // `cb` is called with (err, chunk, final) for each emitted byte
+      // range of the archive.
+      const zip = new Zip((err, chunk, final) => {
+        if (err) {
+          controller.error(err)
+          return
+        }
+        if (chunk.length > 0) {
+          // fflate may reuse internal buffers — copy before handing off.
+          controller.enqueue(new Uint8Array(chunk))
+        }
+        if (final) {
+          controller.close()
+        }
+      })
+
+      try {
+        for (const entry of entries) {
+          if (opts.signal?.aborted) {
+            throw new DOMException('aborted', 'AbortError')
+          }
+
+          // 1. Resolve presigned URL. `expires_at_seconds` defaults to a
+          // few minutes, which is plenty for a single file pull.
+          const fl = await client.beta.directories.files.get(entry.fileId, {
+            project_id: llamacloudProjectId,
+            directory_id: sourceDirId,
+          })
+
+          if (!fl.file_id) {
+            throw new Error(`No file ID associated with directory file`)
+          }
+
+          const presigned = await client.files.get(fl.file_id, {
+            project_id: llamacloudProjectId,
+          })
+
+          // 2. Stream the file body. We feed each chunk straight into
+          // ZipPassThrough.push() so memory stays bounded.
+          const res = await fetch(presigned.url, { signal: opts.signal })
+          if (!res.ok || !res.body) {
+            throw new Error(
+              `failed to download file ${entry.fileId}: HTTP ${res.status}`,
+            )
+          }
+
+          const member = new ZipPassThrough(entry.archiveName)
+          zip.add(member)
+
+          const reader = res.body.getReader()
+          try {
+            // Read until done, pushing each chunk into the zip member.
+            // The last push must set `final = true` so fflate writes the
+            // member's data descriptor + central-directory entry.
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+            while (true) {
+              const { value, done } = await reader.read()
+              if (done) {
+                member.push(new Uint8Array(0), true)
+                break
+              }
+              if (value.length > 0) {
+                member.push(value, false)
+              }
+            }
+          } finally {
+            reader.releaseLock()
+          }
+        }
+
+        // All members added — emit the central directory + EOCD.
+        zip.end()
+      } catch (err) {
+        try {
+          zip.terminate()
+        } catch {
+          // best-effort
+        }
+        controller.error(err)
+      }
+    },
+    cancel() {
+      // Client cancelled; nothing extra to do — the AbortSignal we threaded
+      // through fetch() will tear down the in-flight request.
+    },
+  })
+
+  const filename = `${slugify(project.name)}.zip`
+  return { stream, filename }
+}
+
+/**
+ * Compose a zip-internal filename that disambiguates multiple versions
+ * of the same original name. v1 keeps the bare filename so single-version
+ * projects produce "contract.pdf" rather than "contract__v1.pdf".
+ */
+function archiveNameFor(originalName: string, version: number): string {
+  if (version <= 1) return originalName
+  const dot = originalName.lastIndexOf('.')
+  if (dot <= 0) return `${originalName}__v${version}`
+  const base = originalName.slice(0, dot)
+  const ext = originalName.slice(dot)
+  return `${base}__v${version}${ext}`
+}
+
+/** Project-name -> safe filename slug for Content-Disposition. */
+function slugify(name: string): string {
+  return (
+    name
+      .normalize('NFKD')
+      .replace(/[^\w\s.-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .slice(0, 80) || 'project'
+  )
 }
 
 // ---------- sync status ----------

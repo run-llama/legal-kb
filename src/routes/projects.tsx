@@ -435,6 +435,38 @@ function CreateProjectForm({
   )
 }
 
+function DownloadProjectButton({
+  userId,
+  projectId,
+}: {
+  userId: string
+  projectId: string
+}) {
+  // A plain anchor with `download` is the right primitive here: the
+  // browser handles streaming, progress UI, and "Save As" natively, and
+  // we avoid pulling the whole archive into a Blob in memory. The href
+  // hits our /api/project-zip route which streams chunks straight from
+  // LlamaCloud's S3 through fflate's zip encoder.
+  //
+  // NOTE: the browser ignores the `download` attribute's filename when
+  // the server sends a `Content-Disposition: attachment; filename=...`
+  // header, so the actual saved filename comes from the server.
+  const href =
+    `/api/project-zip` +
+    `?userId=${encodeURIComponent(userId)}` +
+    `&projectId=${encodeURIComponent(projectId)}`
+  return (
+    <a
+      href={href}
+      download
+      className="rounded-full border border-[var(--line)] px-4 py-2 text-sm font-semibold hover:bg-[var(--line)]/40"
+      title="Download all files in this project as a .zip"
+    >
+      Download
+    </a>
+  )
+}
+
 function ProjectCard({
   userId,
   project,
@@ -490,6 +522,7 @@ function ProjectCard({
           >
             {filesOpen ? 'Hide files' : 'Files'}
           </button>
+          <DownloadProjectButton userId={userId} projectId={project.id} />
           <button
             type="button"
             onClick={handleDelete}

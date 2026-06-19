@@ -14,6 +14,7 @@ import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiProjectZipRouteImport } from './routes/api/project-zip'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiAttachmentRouteImport } from './routes/api/attachment'
 
@@ -42,6 +43,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProjectZipRoute = ApiProjectZipRouteImport.update({
+  id: '/api/project-zip',
+  path: '/api/project-zip',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/user-profile': typeof UserProfileRoute
   '/api/attachment': typeof ApiAttachmentRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/project-zip': typeof ApiProjectZipRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/user-profile': typeof UserProfileRoute
   '/api/attachment': typeof ApiAttachmentRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/project-zip': typeof ApiProjectZipRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/user-profile': typeof UserProfileRoute
   '/api/attachment': typeof ApiAttachmentRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/project-zip': typeof ApiProjectZipRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/user-profile'
     | '/api/attachment'
     | '/api/chat'
+    | '/api/project-zip'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/user-profile'
     | '/api/attachment'
     | '/api/chat'
+    | '/api/project-zip'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/user-profile'
     | '/api/attachment'
     | '/api/chat'
+    | '/api/project-zip'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   UserProfileRoute: typeof UserProfileRoute
   ApiAttachmentRoute: typeof ApiAttachmentRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiProjectZipRoute: typeof ApiProjectZipRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/project-zip': {
+      id: '/api/project-zip'
+      path: '/api/project-zip'
+      fullPath: '/api/project-zip'
+      preLoaderRoute: typeof ApiProjectZipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   UserProfileRoute: UserProfileRoute,
   ApiAttachmentRoute: ApiAttachmentRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiProjectZipRoute: ApiProjectZipRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
