@@ -40,7 +40,7 @@ All vars live in `.env.local`. Required:
 
 | Variable                   | Purpose                                                                                                                                                    |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`             | Postgres connection string (e.g. `postgres://user:pass@host:5432/legal_kb`)                                                                                |
+| `DATABASE_URL`             | Postgres connection string (e.g. `postgres://place:holder@host:5432/legal_kb`)                                                                                |
 | `ENCRYPTION_KEY`           | **32-byte hex** (64 hex chars) — encrypts user API keys at rest. Generate with `openssl rand -hex 32`. **Rotating this invalidates all stored user keys.** |
 | `VITE_WORKOS_CLIENT_ID`    | From your WorkOS AuthKit application                                                                                                                       |
 | `VITE_WORKOS_API_HOSTNAME` | Your WorkOS Custom Authentication Domain (or default in dev)                                                                                               |
